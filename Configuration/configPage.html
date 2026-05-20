@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>SpecialToMovie</title>
+</head>
+<body>
+    <div id="SpecialToMovieConfigPage" data-role="page" class="page type-interior pluginConfigurationPage"
+         data-require="emby-input,emby-button,emby-checkbox,emby-select">
+
+        <div data-role="content">
+            <div class="content-primary">
+                <h2 class="sectionTitle">SpecialToMovie Settings</h2>
+
+                <div id="dryRunBanner" class="padded-left padded-right"
+                     style="background:#fff3cd;color:#856404;padding:12px;border-radius:4px;margin-bottom:20px;display:none;">
+                    <strong>Dry run mode is ON</strong> &mdash; the plugin will not modify your filesystem.
+                    Review the matches below, then disable to activate.
+                </div>
+
+                <form id="SpecialToMovieConfigForm">
+
+                    <!-- General -->
+                    <div class="verticalSection">
+                        <h2 class="sectionTitle">General</h2>
+
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label class="emby-checkbox-label">
+                                <input id="chkDryRun" type="checkbox" is="emby-checkbox" checked />
+                                <span>Dry run mode</span>
+                            </label>
+                            <div class="fieldDescription">
+                                Logs all hard links that would be created without actually creating them.
+                                Disable to activate real linking.
+                            </div>
+                        </div>
+
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label class="emby-checkbox-label">
+                                <input id="chkAutoDetect" type="checkbox" is="emby-checkbox" />
+                                <span>Enable automatic detection on library scan events</span>
+                            </label>
+                        </div>
+
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label class="emby-checkbox-label">
+                                <input id="chkDualConfirmation" type="checkbox" is="emby-checkbox" />
+                                <span>Require both TMDB and TVDB to agree before linking</span>
+                            </label>
+                        </div>
+
+                    </div>
+
+                    <!-- Deletion Behavior -->
+                    <div class="verticalSection">
+                        <h2 class="sectionTitle">Deletion Behavior</h2>
+
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label class="emby-checkbox-label">
+                                <input id="chkAutoDelete" type="checkbox" is="emby-checkbox" />
+                                <span>Remove linked files when an item is deleted</span>
+                            </label>
+                            <div class="fieldDescription">
+                                When the TV episode is removed, its linked movie folder is also deleted.
+                            </div>
+                        </div>
+
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label class="emby-checkbox-label">
+                                <input id="chkTwoWayDeletion" type="checkbox" is="emby-checkbox" />
+                                <span>Two-way deletion (Experimental)</span>
+                            </label>
+                            <div class="fieldDescription">
+                                Deleting either item removes both. Without this, only removing the TV episode
+                                removes the linked movie.
+                            </div>
+                            <div class="fieldDescription" style="color:#d9534f;margin-top:4px;">
+                                Warning: This is an experimental feature. When a linked movie is deleted,
+                                the original episode file will be permanently removed along with any file
+                                or folder in the same directory whose name starts with the episode's filename.
+                                This includes subtitles, images, NFO, and trickplay data, but will also
+                                remove any other file that happens to share the same name prefix — even if
+                                it is not a Jellyfin companion file. This cannot be undone.
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- API Keys -->
+                    <div class="verticalSection">
+                        <h2 class="sectionTitle">API Keys</h2>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel inputLabelUnfocused" for="txtTmdbApiKey">TMDB API Key (v3)</label>
+                            <input id="txtTmdbApiKey" type="text" is="emby-input" />
+                            <div class="fieldDescription">
+                                Free at <a href="https://www.themoviedb.org/settings/api" target="_blank" rel="noopener noreferrer">themoviedb.org</a>
+                            </div>
+                        </div>
+
+                        <button id="btnTestTmdb" is="emby-button" type="button" class="raised button-submit">
+                            Test TMDB Connection
+                        </button>
+                        <span id="tmdbTestResult" style="margin-left:10px;"></span>
+
+                        <div class="inputContainer" style="margin-top:16px;">
+                            <label class="inputLabel inputLabelUnfocused" for="txtTvdbApiKey">TVDB API Key (v4)</label>
+                            <input id="txtTvdbApiKey" type="text" is="emby-input" />
+                            <div class="fieldDescription">
+                                Free at <a href="https://thetvdb.com/api-information" target="_blank" rel="noopener noreferrer">thetvdb.com</a>
+                            </div>
+                        </div>
+
+                        <button id="btnTestTvdb" is="emby-button" type="button" class="raised button-submit">
+                            Test TVDB Connection
+                        </button>
+                        <span id="tvdbTestResult" style="margin-left:10px;"></span>
+                    </div>
+
+                    <!-- Library Mappings -->
+                    <div class="verticalSection">
+                        <h2 class="sectionTitle">Library Mappings</h2>
+                        <div class="fieldDescription">
+                            Route Season 0 episodes from a source TV library to a destination movie library.
+                            Set both to the same library for mixed-content libraries.
+                        </div>
+                        <div id="libraryMappingsContainer"></div>
+                        <button id="btnAddMapping" is="emby-button" type="button" class="raised">
+                            Add Mapping
+                        </button>
+                    </div>
+
+                    <!-- Force Links -->
+                    <div class="verticalSection">
+                        <h2 class="sectionTitle">Force Links</h2>
+                        <div class="fieldDescription">
+                            Manually specify episode-to-movie mappings. Format: "SeriesName S00E##" &rarr; "Movie Title (Year)"
+                        </div>
+                        <div id="forceLinksContainer"></div>
+                        <button id="btnAddForceLink" is="emby-button" type="button" class="raised">
+                            Add Force Link
+                        </button>
+                    </div>
+
+                    <!-- Ignore List -->
+                    <div class="verticalSection">
+                        <h2 class="sectionTitle">Ignore List</h2>
+                        <div class="fieldDescription">
+                            Episodes to never link, even if detected as movies.
+                            Format: "SeriesName S00E##" or Jellyfin item ID.
+                        </div>
+                        <div id="ignoreListContainer"></div>
+                        <button id="btnAddIgnore" is="emby-button" type="button" class="raised">
+                            Add to Ignore List
+                        </button>
+                    </div>
+
+                    <!-- Actions -->
+                    <div class="verticalSection">
+                        <h2 class="sectionTitle">Actions</h2>
+                        <button id="btnRunScan" is="emby-button" type="button" class="raised button-submit">
+                            Run Full Scan Now
+                        </button>
+                        <button id="btnRemoveAll" is="emby-button" type="button" class="raised button-cancel"
+                                style="margin-left:10px;">
+                            Remove All Hard Links
+                        </button>
+                    </div>
+
+                    <!-- Linked Pairs Status -->
+                    <div class="verticalSection">
+                        <h2 class="sectionTitle">Linked Pairs</h2>
+                        <table id="pairsTable" class="tblSortable" style="width:100%;border-collapse:collapse;">
+                            <thead>
+                                <tr>
+                                    <th style="text-align:left;padding:8px;">Episode</th>
+                                    <th style="text-align:left;padding:8px;">Movie</th>
+                                    <th style="text-align:left;padding:8px;">Status</th>
+                                    <th style="text-align:left;padding:8px;">Created</th>
+                                </tr>
+                            </thead>
+                            <tbody id="pairsTableBody">
+                                <tr><td colspan="4" style="padding:8px;color:#888;">No linked pairs yet.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div>
+                        <button is="emby-button" type="submit" class="raised button-submit block">
+                            <span>Save</span>
+                        </button>
+                    </div>
+
+                </form>
+            </div>
+        </div>
+
+        <script type="text/javascript">
+            var SpecialToMovieConfig = {
+                pluginUniqueId: 'a1b2c3d4-5678-9abc-def0-123456789abc',
+                libraries: [],
+
+                loadConfig: function () {
+                    Dashboard.showLoadingMsg();
+                    var page = document.querySelector('#SpecialToMovieConfigPage');
+
+                    ApiClient.getPluginConfiguration(SpecialToMovieConfig.pluginUniqueId).then(function (config) {
+                        page.querySelector('#chkDryRun').checked = config.DryRunMode;
+                        page.querySelector('#chkAutoDetect').checked = config.AutoDetectEnabled;
+                        page.querySelector('#chkDualConfirmation').checked = config.RequireDualConfirmation;
+                        page.querySelector('#chkAutoDelete').checked = config.AutoDeleteOnRemoval;
+                        page.querySelector('#chkTwoWayDeletion').checked = config.TwoWayDeletion;
+                        page.querySelector('#txtTmdbApiKey').value = config.TmdbApiKey || '';
+                        page.querySelector('#txtTvdbApiKey').value = config.TvdbApiKey || '';
+
+                        SpecialToMovieConfig.updateDryRunBanner(config.DryRunMode);
+                        SpecialToMovieConfig.updateTwoWayState(config.AutoDeleteOnRemoval);
+                        SpecialToMovieConfig.updateRemoveAllButton(config.DryRunMode);
+                        SpecialToMovieConfig.renderLibraryMappings(config.LibraryMappings || []);
+                        SpecialToMovieConfig.renderForceLinks(config.ForceLinks || {});
+                        SpecialToMovieConfig.renderIgnoreList(config.IgnoreList || []);
+
+                        Dashboard.hideLoadingMsg();
+                    });
+                },
+
+                saveConfig: function () {
+                    Dashboard.showLoadingMsg();
+                    var page = document.querySelector('#SpecialToMovieConfigPage');
+
+                    ApiClient.getPluginConfiguration(SpecialToMovieConfig.pluginUniqueId).then(function (config) {
+                        config.DryRunMode = page.querySelector('#chkDryRun').checked;
+                        config.AutoDetectEnabled = page.querySelector('#chkAutoDetect').checked;
+                        config.RequireDualConfirmation = page.querySelector('#chkDualConfirmation').checked;
+                        config.AutoDeleteOnRemoval = page.querySelector('#chkAutoDelete').checked;
+                        config.TwoWayDeletion = page.querySelector('#chkTwoWayDeletion').checked;
+                        config.TmdbApiKey = page.querySelector('#txtTmdbApiKey').value.trim();
+                        config.TvdbApiKey = page.querySelector('#txtTvdbApiKey').value.trim();
+
+                        config.LibraryMappings = SpecialToMovieConfig.collectLibraryMappings();
+                        config.ForceLinks = SpecialToMovieConfig.collectForceLinks();
+                        config.IgnoreList = SpecialToMovieConfig.collectIgnoreList();
+
+                        ApiClient.updatePluginConfiguration(SpecialToMovieConfig.pluginUniqueId, config).then(function () {
+                            Dashboard.processPluginConfigurationUpdateResult();
+                        });
+                    });
+                },
+
+                updateDryRunBanner: function (isDryRun) {
+                    document.getElementById('dryRunBanner').style.display = isDryRun ? 'block' : 'none';
+                },
+
+                updateTwoWayState: function (autoDeleteEnabled) {
+                    var chk = document.getElementById('chkTwoWayDeletion');
+                    chk.disabled = !autoDeleteEnabled;
+                    if (!autoDeleteEnabled) {
+                        chk.checked = false;
+                    }
+                },
+
+                updateRemoveAllButton: function (isDryRun) {
+                    var btn = document.getElementById('btnRemoveAll');
+                    btn.disabled = isDryRun;
+                    btn.title = isDryRun
+                        ? 'Dry run mode is a filesystem safety lock — disable it above before removing hard links.'
+                        : '';
+                },
+
+                renderLibraryMappings: function (mappings) {
+                    var container = document.getElementById('libraryMappingsContainer');
+                    container.innerHTML = '';
+                    mappings.forEach(function (m, i) {
+                        container.appendChild(SpecialToMovieConfig.createMappingRow(m, i));
+                    });
+                },
+
+                createMappingRow: function (mapping, index) {
+                    var row = document.createElement('div');
+                    row.className = 'mapping-row';
+                    row.style.cssText = 'display:flex;gap:10px;align-items:center;margin-bottom:8px;';
+
+                    var srcSelect = SpecialToMovieConfig.buildLibrarySelect('mapping-source', mapping.SourceLibraryId);
+                    srcSelect.style.flex = '1';
+                    srcSelect.dataset.index = index;
+                    row.appendChild(srcSelect);
+
+                    var arrow = document.createElement('span');
+                    arrow.innerHTML = '&rarr;';
+                    row.appendChild(arrow);
+
+                    var dstSelect = SpecialToMovieConfig.buildLibrarySelect('mapping-dest', mapping.DestinationLibraryId);
+                    dstSelect.style.flex = '1';
+                    dstSelect.dataset.index = index;
+                    row.appendChild(dstSelect);
+
+                    var label = document.createElement('label');
+                    label.style.cssText = 'display:flex;align-items:center;gap:4px;';
+                    var chk = document.createElement('input');
+                    chk.type = 'checkbox';
+                    chk.className = 'mapping-enabled';
+                    chk.checked = mapping.Enabled;
+                    label.appendChild(chk);
+                    var lblText = document.createElement('span');
+                    lblText.textContent = 'Enabled';
+                    label.appendChild(lblText);
+                    row.appendChild(label);
+
+                    var removeBtn = document.createElement('button');
+                    removeBtn.type = 'button';
+                    removeBtn.className = 'mapping-remove';
+                    removeBtn.style.cursor = 'pointer';
+                    removeBtn.textContent = 'Remove';
+                    removeBtn.addEventListener('click', function () { row.remove(); });
+                    row.appendChild(removeBtn);
+
+                    return row;
+                },
+
+                buildLibrarySelect: function (className, selectedId) {
+                    var select = document.createElement('select');
+                    select.className = className + ' emby-select';
+
+                    var defaultOpt = document.createElement('option');
+                    defaultOpt.value = '';
+                    defaultOpt.textContent = '-- Select Library --';
+                    select.appendChild(defaultOpt);
+
+                    SpecialToMovieConfig.libraries.forEach(function (lib) {
+                        var opt = document.createElement('option');
+                        opt.value = lib.ItemId;
+                        opt.textContent = lib.Name;
+                        opt.selected = (lib.ItemId === selectedId);
+                        select.appendChild(opt);
+                    });
+
+                    return select;
+                },
+
+                collectLibraryMappings: function () {
+                    var rows = document.querySelectorAll('.mapping-row');
+                    var result = [];
+                    rows.forEach(function (row) {
+                        var src = row.querySelector('.mapping-source').value;
+                        var dst = row.querySelector('.mapping-dest').value;
+                        if (src && dst) {
+                            result.push({
+                                SourceLibraryId: src,
+                                DestinationLibraryId: dst,
+                                DestinationPath: '',
+                                Enabled: row.querySelector('.mapping-enabled').checked
+                            });
+                        }
+                    });
+                    return result;
+                },
+
+                renderForceLinks: function (forceLinks) {
+                    var container = document.getElementById('forceLinksContainer');
+                    container.innerHTML = '';
+                    Object.keys(forceLinks).forEach(function (key) {
+                        container.appendChild(SpecialToMovieConfig.createForceLinkRow(key, forceLinks[key]));
+                    });
+                },
+
+                createForceLinkRow: function (episode, movie) {
+                    var row = document.createElement('div');
+                    row.className = 'forcelink-row';
+                    row.style.cssText = 'display:flex;gap:10px;align-items:center;margin-bottom:8px;';
+
+                    var epInput = document.createElement('input');
+                    epInput.type = 'text';
+                    epInput.className = 'forcelink-episode emby-input';
+                    epInput.placeholder = 'SeriesName S00E##';
+                    epInput.value = episode || '';
+                    epInput.style.flex = '1';
+                    row.appendChild(epInput);
+
+                    var arrow = document.createElement('span');
+                    arrow.innerHTML = '&rarr;';
+                    row.appendChild(arrow);
+
+                    var mvInput = document.createElement('input');
+                    mvInput.type = 'text';
+                    mvInput.className = 'forcelink-movie emby-input';
+                    mvInput.placeholder = 'Movie Title (Year)';
+                    mvInput.value = movie || '';
+                    mvInput.style.flex = '1';
+                    row.appendChild(mvInput);
+
+                    var removeBtn = document.createElement('button');
+                    removeBtn.type = 'button';
+                    removeBtn.className = 'forcelink-remove';
+                    removeBtn.style.cursor = 'pointer';
+                    removeBtn.textContent = 'Remove';
+                    removeBtn.addEventListener('click', function () { row.remove(); });
+                    row.appendChild(removeBtn);
+
+                    return row;
+                },
+
+                collectForceLinks: function () {
+                    var rows = document.querySelectorAll('.forcelink-row');
+                    var result = {};
+                    rows.forEach(function (row) {
+                        var ep = row.querySelector('.forcelink-episode').value.trim();
+                        var mv = row.querySelector('.forcelink-movie').value.trim();
+                        if (ep && mv) {
+                            result[ep] = mv;
+                        }
+                    });
+                    return result;
+                },
+
+                renderIgnoreList: function (ignoreList) {
+                    var container = document.getElementById('ignoreListContainer');
+                    container.innerHTML = '';
+                    ignoreList.forEach(function (item) {
+                        container.appendChild(SpecialToMovieConfig.createIgnoreRow(item));
+                    });
+                },
+
+                createIgnoreRow: function (value) {
+                    var row = document.createElement('div');
+                    row.className = 'ignore-row';
+                    row.style.cssText = 'display:flex;gap:10px;align-items:center;margin-bottom:8px;';
+
+                    var input = document.createElement('input');
+                    input.type = 'text';
+                    input.className = 'ignore-value emby-input';
+                    input.placeholder = 'SeriesName S00E## or Item ID';
+                    input.value = value || '';
+                    input.style.flex = '1';
+                    row.appendChild(input);
+
+                    var removeBtn = document.createElement('button');
+                    removeBtn.type = 'button';
+                    removeBtn.className = 'ignore-remove';
+                    removeBtn.style.cursor = 'pointer';
+                    removeBtn.textContent = 'Remove';
+                    removeBtn.addEventListener('click', function () { row.remove(); });
+                    row.appendChild(removeBtn);
+
+                    return row;
+                },
+
+                collectIgnoreList: function () {
+                    var rows = document.querySelectorAll('.ignore-row');
+                    var result = [];
+                    rows.forEach(function (row) {
+                        var val = row.querySelector('.ignore-value').value.trim();
+                        if (val) {
+                            result.push(val);
+                        }
+                    });
+                    return result;
+                }
+            };
+
+            document.querySelector('#SpecialToMovieConfigPage')
+                .addEventListener('pageshow', function () {
+                    // Load Jellyfin libraries for dropdown population
+                    ApiClient.getVirtualFolders().then(function (folders) {
+                        SpecialToMovieConfig.libraries = folders;
+                        SpecialToMovieConfig.loadConfig();
+                    });
+                });
+
+            document.querySelector('#SpecialToMovieConfigForm')
+                .addEventListener('submit', function (e) {
+                    e.preventDefault();
+                    SpecialToMovieConfig.saveConfig();
+                    return false;
+                });
+
+            document.querySelector('#chkDryRun')
+                .addEventListener('change', function () {
+                    SpecialToMovieConfig.updateDryRunBanner(this.checked);
+                    SpecialToMovieConfig.updateRemoveAllButton(this.checked);
+                });
+
+            document.querySelector('#chkAutoDelete')
+                .addEventListener('change', function () {
+                    SpecialToMovieConfig.updateTwoWayState(this.checked);
+                });
+
+            document.querySelector('#btnAddMapping')
+                .addEventListener('click', function () {
+                    var container = document.getElementById('libraryMappingsContainer');
+                    var index = container.children.length;
+                    container.appendChild(SpecialToMovieConfig.createMappingRow(
+                        { SourceLibraryId: '', DestinationLibraryId: '', Enabled: true }, index));
+                });
+
+            document.querySelector('#btnAddForceLink')
+                .addEventListener('click', function () {
+                    document.getElementById('forceLinksContainer')
+                        .appendChild(SpecialToMovieConfig.createForceLinkRow('', ''));
+                });
+
+            document.querySelector('#btnAddIgnore')
+                .addEventListener('click', function () {
+                    document.getElementById('ignoreListContainer')
+                        .appendChild(SpecialToMovieConfig.createIgnoreRow(''));
+                });
+
+            document.querySelector('#btnRemoveAll')
+                .addEventListener('click', function () {
+                    if (document.querySelector('#chkDryRun').checked) {
+                        return;
+                    }
+                    var msg = 'This will delete all hard links created by this plugin and transition pairs back to DryRun status. ' +
+                              'Your original TV episode files will NOT be affected. The linked movie entries will disappear ' +
+                              'from your movie libraries on the next library scan. This cannot be undone.';
+                    if (confirm(msg)) {
+                        ApiClient.ajax({
+                            type: 'POST',
+                            url: ApiClient.getUrl('SpecialToMovie/RemoveAllLinks')
+                        }).then(function (result) {
+                            Dashboard.alert('Removed ' + result.Removed + ' hard links. Pairs preserved in database.');
+                        }, function () {
+                            Dashboard.alert('Failed to remove hard links. Check the server log.');
+                        });
+                    }
+                });
+
+            document.querySelector('#btnRunScan')
+                .addEventListener('click', function () {
+                    Dashboard.alert('Full scan started. This may take a while...');
+                    ApiClient.ajax({
+                        type: 'POST',
+                        url: ApiClient.getUrl('SpecialToMovie/RunFullScan')
+                    }).then(function () {
+                        Dashboard.alert('Full scan complete.');
+                    }, function () {
+                        Dashboard.alert('Full scan failed. Check the server log.');
+                    });
+                });
+        </script>
+    </div>
+</body>
+</html>

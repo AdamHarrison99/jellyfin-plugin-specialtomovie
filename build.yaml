@@ -1,0 +1,17 @@
+name: "SpecialToMovie"
+guid: "a1b2c3d4-5678-9abc-def0-123456789abc"
+version: "1.0.0.0"
+targetAbi: "10.11.0.0"
+framework: "net9.0"
+overview: "Detects TV specials that are also movies, creates hard links, and syncs watch status."
+description: |
+  Automatically detects Season 0 episodes that are also standalone movies (e.g., El Camino,
+  Downton Abbey: A New Era), creates hard links in your movie library, and bidirectionally
+  syncs watch status between the episode and movie entries. Supports TMDB and TVDB lookups,
+  dry run mode, configurable library mappings, and automatic cleanup.
+category: "General"
+owner: "AdamHarrison99"
+artifacts:
+  - "Jellyfin.Plugin.SpecialToMovie.dll"
+changelog: |
+  - Initial release
