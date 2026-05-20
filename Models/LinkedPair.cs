@@ -26,6 +26,8 @@ public class LinkedPair
 
     public string? TvdbMovieId { get; set; }
 
+    public string? TvdbMovieSlug { get; set; }
+
     public string? ImdbId { get; set; }
 
     public PairStatus Status { get; set; }

@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Jellyfin.Plugin.SpecialToMovie.Models;
+using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Model.Entities;
 using Microsoft.Extensions.Logging;
@@ -15,7 +16,6 @@ public class TvdbLookupService : IMetadataLookupService, IDisposable
 {
     private const string BaseUrl = "https://api4.thetvdb.com/v4";
     private const int MaxRetries = 3;
-    private const int MaxLevenshteinDistance = 3;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -25,6 +25,7 @@ public class TvdbLookupService : IMetadataLookupService, IDisposable
     private static readonly TimeSpan TokenLifetime = TimeSpan.FromHours(23);
 
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly IServerConfigurationManager _configManager;
     private readonly ILogger<TvdbLookupService> _logger;
     private readonly SemaphoreSlim _rateLimiter = new(5, 5);
     private readonly SemaphoreSlim _authLock = new(1, 1);
@@ -32,9 +33,10 @@ public class TvdbLookupService : IMetadataLookupService, IDisposable
     private volatile string? _bearerToken;
     private long _tokenExpiryTicks;
 
-    public TvdbLookupService(IHttpClientFactory httpClientFactory, ILogger<TvdbLookupService> logger)
+    public TvdbLookupService(IHttpClientFactory httpClientFactory, IServerConfigurationManager configManager, ILogger<TvdbLookupService> logger)
     {
         _httpClientFactory = httpClientFactory;
+        _configManager = configManager;
         _logger = logger;
     }
 
@@ -60,19 +62,14 @@ public class TvdbLookupService : IMetadataLookupService, IDisposable
             return null;
         }
 
-        // Primary: check for linkedMovie via episode extended endpoint
         var tvdbId = episode.GetProviderId(MetadataProvider.Tvdb);
-        if (!string.IsNullOrEmpty(tvdbId))
+        if (string.IsNullOrEmpty(tvdbId))
         {
-            var match = await FindLinkedMovieAsync(tvdbId, token, cancellationToken).ConfigureAwait(false);
-            if (match != null)
-            {
-                return match;
-            }
+            _logger.LogDebug("No TVDB ID for episode {Name}, skipping TVDB lookup", episode.Name);
+            return null;
         }
 
-        // Fallback: search by episode name
-        return await SearchByNameAsync(episode, token, cancellationToken).ConfigureAwait(false);
+        return await FindLinkedMovieAsync(tvdbId, token, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<MovieMatch?> FindLinkedMovieAsync(string episodeTvdbId, string token, CancellationToken cancellationToken)
@@ -125,92 +122,78 @@ public class TvdbLookupService : IMetadataLookupService, IDisposable
             .FirstOrDefault(r => string.Equals(r.SourceName, "IMDB", StringComparison.OrdinalIgnoreCase))
             ?.Id;
 
+        // Prefer English title over original language
+        var title = movie.Name ?? string.Empty;
+        var engTitle = await GetTranslatedTitleAsync(movieId, token, cancellationToken).ConfigureAwait(false);
+        if (!string.IsNullOrEmpty(engTitle))
+        {
+            title = engTitle;
+        }
+
         _logger.LogInformation(
             "TVDB matched linkedMovie: {Title} ({Year}), TVDB ID {TvdbId}",
-            movie.Name, year, movie.Id);
+            title, year, movie.Id);
 
         return new MovieMatch
         {
-            Title = movie.Name ?? string.Empty,
+            Title = title,
             Year = year,
             TvdbMovieId = movie.Id?.ToString(),
+            TvdbMovieSlug = movie.Slug,
             ImdbId = imdbId
         };
     }
 
-    private async Task<MovieMatch?> SearchByNameAsync(Episode episode, string token, CancellationToken cancellationToken)
+    private async Task<string?> GetTranslatedTitleAsync(long movieId, string token, CancellationToken cancellationToken)
     {
-        var name = episode.Name;
-        if (string.IsNullOrEmpty(name))
-        {
-            return null;
-        }
-
-        var url = $"{BaseUrl}/search?query={Uri.EscapeDataString(name)}&type=movie";
+        var lang = GetTvdbLanguageCode();
+        var url = $"{BaseUrl}/movies/{movieId}/translations/{lang}";
         var response = await SendWithRetryAsync(url, token, cancellationToken).ConfigureAwait(false);
-        if (response == null)
+        if (response != null)
         {
-            return null;
+            var translationData = JsonSerializer.Deserialize<TvdbResponse<TvdbTranslation>>(response, JsonOptions);
+            if (!string.IsNullOrEmpty(translationData?.Data?.Name))
+            {
+                return translationData.Data.Name;
+            }
         }
 
-        var searchResult = JsonSerializer.Deserialize<TvdbResponse<List<TvdbSearchResult>>>(response, JsonOptions);
-        if (searchResult?.Data == null || searchResult.Data.Count == 0)
+        // Fall back to English if preferred language not available
+        if (!string.Equals(lang, "eng", StringComparison.Ordinal))
         {
-            _logger.LogDebug("TVDB search returned no results for {Name}", name);
-            return null;
+            var engUrl = $"{BaseUrl}/movies/{movieId}/translations/eng";
+            var engResponse = await SendWithRetryAsync(engUrl, token, cancellationToken).ConfigureAwait(false);
+            if (engResponse != null)
+            {
+                var engData = JsonSerializer.Deserialize<TvdbResponse<TvdbTranslation>>(engResponse, JsonOptions);
+                if (!string.IsNullOrEmpty(engData?.Data?.Name))
+                {
+                    return engData.Data.Name;
+                }
+            }
         }
 
-        // Find best match by title similarity and year proximity
-        int? episodeYear = episode.PremiereDate?.Year;
-
-        foreach (var result in searchResult.Data)
-        {
-            if (string.IsNullOrEmpty(result.Name))
-            {
-                continue;
-            }
-
-            var titleMatch = IsCloseMatch(name, result.Name);
-            if (!titleMatch)
-            {
-                continue;
-            }
-
-            // Year proximity check if both have years
-            int? resultYear = null;
-            if (!string.IsNullOrEmpty(result.Year) &&
-                int.TryParse(result.Year, NumberStyles.Integer, CultureInfo.InvariantCulture, out var ry))
-            {
-                resultYear = ry;
-            }
-
-            if (episodeYear.HasValue && resultYear.HasValue &&
-                Math.Abs(episodeYear.Value - resultYear.Value) > 1)
-            {
-                continue;
-            }
-
-            _logger.LogInformation(
-                "TVDB search matched {EpisodeName} to movie: {MovieTitle} ({Year})",
-                name, result.Name, result.Year);
-
-            // Retrieve full movie details if we have a TVDB movie ID
-            if (!string.IsNullOrEmpty(result.TvdbId) &&
-                long.TryParse(result.TvdbId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var movieId))
-            {
-                return await GetMovieByIdAsync(movieId, token, cancellationToken).ConfigureAwait(false);
-            }
-
-            return new MovieMatch
-            {
-                Title = result.Name,
-                Year = resultYear,
-                TvdbMovieId = result.TvdbId
-            };
-        }
-
-        _logger.LogDebug("TVDB search found no close match for {Name}", name);
         return null;
+    }
+
+    private string GetTvdbLanguageCode()
+    {
+        var jellyfinLang = _configManager.Configuration.PreferredMetadataLanguage;
+        if (string.IsNullOrEmpty(jellyfinLang))
+        {
+            return "eng";
+        }
+
+        // Convert ISO 639-1 (2-letter) to ISO 639-2/B (3-letter) for TVDB
+        try
+        {
+            var culture = new CultureInfo(jellyfinLang);
+            return culture.ThreeLetterISOLanguageName;
+        }
+        catch (CultureNotFoundException)
+        {
+            return "eng";
+        }
     }
 
     private async Task EnsureAuthenticatedAsync(string apiKey, CancellationToken cancellationToken)
@@ -320,67 +303,6 @@ public class TvdbLookupService : IMetadataLookupService, IDisposable
         }
     }
 
-    private static bool IsCloseMatch(string source, string candidate)
-    {
-        if (string.IsNullOrEmpty(source) || string.IsNullOrEmpty(candidate))
-        {
-            return false;
-        }
-
-        // Substring containment
-        if (candidate.Contains(source, StringComparison.OrdinalIgnoreCase) ||
-            source.Contains(candidate, StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-
-        // Skip expensive Levenshtein for very long titles
-        if (source.Length > 200 || candidate.Length > 200)
-        {
-            return false;
-        }
-
-        // Levenshtein distance on normalized strings
-        var a = source.ToUpperInvariant();
-        var b = candidate.ToUpperInvariant();
-        return LevenshteinDistance(a, b) <= MaxLevenshteinDistance;
-    }
-
-    private static int LevenshteinDistance(string s, string t)
-    {
-        var n = s.Length;
-        var m = t.Length;
-
-        if (Math.Abs(n - m) > MaxLevenshteinDistance)
-        {
-            return Math.Abs(n - m);
-        }
-
-        var prev = new int[m + 1];
-        var curr = new int[m + 1];
-
-        for (var j = 0; j <= m; j++)
-        {
-            prev[j] = j;
-        }
-
-        for (var i = 1; i <= n; i++)
-        {
-            curr[0] = i;
-            for (var j = 1; j <= m; j++)
-            {
-                var cost = s[i - 1] == t[j - 1] ? 0 : 1;
-                curr[j] = Math.Min(
-                    Math.Min(prev[j] + 1, curr[j - 1] + 1),
-                    prev[j - 1] + cost);
-            }
-
-            (prev, curr) = (curr, prev);
-        }
-
-        return prev[m];
-    }
-
     // TVDB API response models
 
     private sealed class TvdbResponse<T>
@@ -412,6 +334,9 @@ public class TvdbLookupService : IMetadataLookupService, IDisposable
         [JsonPropertyName("name")]
         public string? Name { get; set; }
 
+        [JsonPropertyName("slug")]
+        public string? Slug { get; set; }
+
         [JsonPropertyName("year")]
         public string? Year { get; set; }
 
@@ -428,15 +353,9 @@ public class TvdbLookupService : IMetadataLookupService, IDisposable
         public string? SourceName { get; set; }
     }
 
-    private sealed class TvdbSearchResult
+    private sealed class TvdbTranslation
     {
         [JsonPropertyName("name")]
         public string? Name { get; set; }
-
-        [JsonPropertyName("year")]
-        public string? Year { get; set; }
-
-        [JsonPropertyName("tvdb_id")]
-        public string? TvdbId { get; set; }
     }
 }

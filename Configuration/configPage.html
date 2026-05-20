@@ -159,34 +159,82 @@
                         <button id="btnRunScan" is="emby-button" type="button" class="raised button-submit">
                             Run Full Scan Now
                         </button>
-                        <button id="btnRemoveAll" is="emby-button" type="button" class="raised button-cancel"
-                                style="margin-left:10px;">
-                            Remove All Hard Links
-                        </button>
                     </div>
 
-                    <!-- Linked Pairs Status -->
+                    <!-- Danger Zone -->
                     <div class="verticalSection">
-                        <h2 class="sectionTitle">Linked Pairs</h2>
-                        <table id="pairsTable" class="tblSortable" style="width:100%;border-collapse:collapse;">
-                            <thead>
-                                <tr>
-                                    <th style="text-align:left;padding:8px;">Episode</th>
-                                    <th style="text-align:left;padding:8px;">Movie</th>
-                                    <th style="text-align:left;padding:8px;">Status</th>
-                                    <th style="text-align:left;padding:8px;">Created</th>
-                                </tr>
-                            </thead>
-                            <tbody id="pairsTableBody">
-                                <tr><td colspan="4" style="padding:8px;color:#888;">No linked pairs yet.</td></tr>
-                            </tbody>
-                        </table>
+                        <h2 class="sectionTitle" style="color:#d9534f;">Danger Zone</h2>
+                        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                            <button id="btnRemoveAll" is="emby-button" type="button" class="raised"
+                                    style="background:#d9534f;color:#fff;">
+                                Remove All Hard Links
+                            </button>
+                            <button id="btnClearDatabase" is="emby-button" type="button" class="raised"
+                                    style="background:#d9534f;color:#fff;">
+                                Clear Database
+                            </button>
+                        </div>
+                        <div class="fieldDescription" style="margin-top:8px;">
+                            <strong>Remove All Hard Links</strong> deletes all plugin-created folders and transitions
+                            pairs back to DryRun status. Original episode files are not affected.
+                        </div>
+                        <div class="fieldDescription">
+                            <strong>Clear Database</strong> permanently removes all pair records. Match data,
+                            TMDB/TVDB IDs, and link history will be lost. Hard link files on disk are not affected.
+                        </div>
                     </div>
 
                     <div>
                         <button is="emby-button" type="submit" class="raised button-submit block">
                             <span>Save</span>
                         </button>
+                    </div>
+
+                    <!-- Linked Pairs Status -->
+                    <div class="verticalSection">
+                        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+                            <h2 class="sectionTitle" style="margin:0;">Linked Pairs</h2>
+                            <button id="btnRefreshPairs" is="emby-button" type="button" class="raised" style="padding:4px 12px;">
+                                Refresh
+                            </button>
+                        </div>
+                        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap;">
+                            <input id="pairsSearch" type="text" is="emby-input" placeholder="Search by title or path..."
+                                   style="flex:1;min-width:200px;" />
+                            <select id="pairsStatusFilter" is="emby-select" style="min-width:120px;">
+                                <option value="">All Statuses</option>
+                                <option value="0">DryRun</option>
+                                <option value="1">Pending</option>
+                                <option value="2">Active</option>
+                                <option value="3">Error</option>
+                            </select>
+                            <select id="pairsLibraryFilter" is="emby-select" style="min-width:150px;">
+                                <option value="">All Libraries</option>
+                            </select>
+                        </div>
+                        <div id="pairsControls" style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+                            <span id="pairsInfo" style="color:#888;"></span>
+                            <div style="margin-left:auto;display:flex;gap:6px;">
+                                <button id="btnPairsPrev" is="emby-button" type="button" class="raised" disabled>Prev</button>
+                                <button id="btnPairsNext" is="emby-button" type="button" class="raised" disabled>Next</button>
+                            </div>
+                        </div>
+                        <table id="pairsTable" class="tblSortable" style="width:100%;border-collapse:collapse;">
+                            <thead>
+                                <tr>
+                                    <th style="text-align:left;padding:8px;">Episode</th>
+                                    <th style="text-align:left;padding:8px;">Movie</th>
+                                    <th style="text-align:left;padding:8px;">Library</th>
+                                    <th style="text-align:left;padding:8px;">IDs</th>
+                                    <th style="text-align:left;padding:8px;">Status</th>
+                                    <th style="text-align:left;padding:8px;">Created</th>
+                                    <th style="text-align:left;padding:8px;"></th>
+                                </tr>
+                            </thead>
+                            <tbody id="pairsTableBody">
+                                <tr><td colspan="5" style="padding:8px;color:#888;">No linked pairs yet.</td></tr>
+                            </tbody>
+                        </table>
                     </div>
 
                 </form>
@@ -202,6 +250,8 @@
                     Dashboard.showLoadingMsg();
                     var page = document.querySelector('#SpecialToMovieConfigPage');
 
+                    SpecialToMovieConfig.updateDryRunBanner(true);
+
                     ApiClient.getPluginConfiguration(SpecialToMovieConfig.pluginUniqueId).then(function (config) {
                         page.querySelector('#chkDryRun').checked = config.DryRunMode;
                         page.querySelector('#chkAutoDetect').checked = config.AutoDetectEnabled;
@@ -213,12 +263,14 @@
 
                         SpecialToMovieConfig.updateDryRunBanner(config.DryRunMode);
                         SpecialToMovieConfig.updateTwoWayState(config.AutoDeleteOnRemoval);
-                        SpecialToMovieConfig.updateRemoveAllButton(config.DryRunMode);
                         SpecialToMovieConfig.renderLibraryMappings(config.LibraryMappings || []);
-                        SpecialToMovieConfig.renderForceLinks(config.ForceLinks || {});
+                        SpecialToMovieConfig.renderForceLinks(config.ForceLinks || []);
                         SpecialToMovieConfig.renderIgnoreList(config.IgnoreList || []);
 
                         Dashboard.hideLoadingMsg();
+                    }, function () {
+                        Dashboard.hideLoadingMsg();
+                        Dashboard.alert('Failed to load plugin configuration. Check the server log.');
                     });
                 },
 
@@ -236,12 +288,36 @@
                         config.TvdbApiKey = page.querySelector('#txtTvdbApiKey').value.trim();
 
                         config.LibraryMappings = SpecialToMovieConfig.collectLibraryMappings();
-                        config.ForceLinks = SpecialToMovieConfig.collectForceLinks();
+                        var newForceLinks = SpecialToMovieConfig.collectForceLinks();
+
+                        // Find force links that were removed
+                        var oldKeys = (config.ForceLinks || []).map(function (f) { return f.EpisodeKey; });
+                        var newKeys = newForceLinks.map(function (f) { return f.EpisodeKey; });
+                        var removedKeys = oldKeys.filter(function (k) { return newKeys.indexOf(k) < 0; });
+
+                        config.ForceLinks = newForceLinks;
                         config.IgnoreList = SpecialToMovieConfig.collectIgnoreList();
 
                         ApiClient.updatePluginConfiguration(SpecialToMovieConfig.pluginUniqueId, config).then(function () {
+                            // Clean up pairs for removed force links
+                            if (removedKeys.length > 0) {
+                                ApiClient.ajax({
+                                    type: 'POST',
+                                    url: ApiClient.getUrl('SpecialToMovie/RemoveForceLinkedPairs'),
+                                    data: JSON.stringify({ EpisodeKeys: removedKeys }),
+                                    contentType: 'application/json'
+                                }).then(function () {
+                                    SpecialToMovieConfig.loadPairs();
+                                });
+                            }
                             Dashboard.processPluginConfigurationUpdateResult();
+                        }, function () {
+                            Dashboard.hideLoadingMsg();
+                            Dashboard.alert('Failed to save configuration.');
                         });
+                    }, function () {
+                        Dashboard.hideLoadingMsg();
+                        Dashboard.alert('Failed to load current configuration for saving.');
                     });
                 },
 
@@ -255,14 +331,6 @@
                     if (!autoDeleteEnabled) {
                         chk.checked = false;
                     }
-                },
-
-                updateRemoveAllButton: function (isDryRun) {
-                    var btn = document.getElementById('btnRemoveAll');
-                    btn.disabled = isDryRun;
-                    btn.title = isDryRun
-                        ? 'Dry run mode is a filesystem safety lock — disable it above before removing hard links.'
-                        : '';
                 },
 
                 renderLibraryMappings: function (mappings) {
@@ -356,8 +424,9 @@
                 renderForceLinks: function (forceLinks) {
                     var container = document.getElementById('forceLinksContainer');
                     container.innerHTML = '';
-                    Object.keys(forceLinks).forEach(function (key) {
-                        container.appendChild(SpecialToMovieConfig.createForceLinkRow(key, forceLinks[key]));
+                    forceLinks.forEach(function (entry) {
+                        container.appendChild(SpecialToMovieConfig.createForceLinkRow(
+                            entry.EpisodeKey || '', entry.MovieTitle || ''));
                     });
                 },
 
@@ -399,12 +468,12 @@
 
                 collectForceLinks: function () {
                     var rows = document.querySelectorAll('.forcelink-row');
-                    var result = {};
+                    var result = [];
                     rows.forEach(function (row) {
                         var ep = row.querySelector('.forcelink-episode').value.trim();
                         var mv = row.querySelector('.forcelink-movie').value.trim();
                         if (ep && mv) {
-                            result[ep] = mv;
+                            result.push({ EpisodeKey: ep, MovieTitle: mv });
                         }
                     });
                     return result;
@@ -452,8 +521,259 @@
                         }
                     });
                     return result;
+                },
+
+                // Pairs paging
+                allPairs: [],
+                pairsPage: 0,
+                pairsPerPage: 25,
+
+                loadPairs: function () {
+                    ApiClient.ajax({
+                        type: 'GET',
+                        url: ApiClient.getUrl('SpecialToMovie/Pairs'),
+                        dataType: 'json'
+                    }).then(function (pairs) {
+                        SpecialToMovieConfig.allPairs = pairs || [];
+                        SpecialToMovieConfig.pairsPage = 0;
+                        SpecialToMovieConfig.renderPairsPage();
+                    }, function () {
+                        SpecialToMovieConfig.allPairs = [];
+                        SpecialToMovieConfig.renderPairsPage();
+                    });
+                },
+
+                getFilteredPairs: function () {
+                    var search = (document.getElementById('pairsSearch').value || '').toLowerCase().trim();
+                    var statusFilter = document.getElementById('pairsStatusFilter').value;
+                    var libraryFilter = document.getElementById('pairsLibraryFilter').value;
+                    var pairs = SpecialToMovieConfig.allPairs;
+
+                    if (statusFilter !== '') {
+                        var statusNum = parseInt(statusFilter, 10);
+                        pairs = pairs.filter(function (p) {
+                            if (typeof p.Status === 'number') return p.Status === statusNum;
+                            var statusMap = { 'DryRun': 0, 'Pending': 1, 'Active': 2, 'Error': 3 };
+                            return (statusMap[p.Status] !== undefined ? statusMap[p.Status] : -1) === statusNum;
+                        });
+                    }
+
+                    if (libraryFilter) {
+                        pairs = pairs.filter(function (p) {
+                            return p.SourceLibraryId === libraryFilter || p.DestinationLibraryId === libraryFilter;
+                        });
+                    }
+
+                    if (search) {
+                        pairs = pairs.filter(function (p) {
+                            var title = (p.MovieTitle || '').toLowerCase();
+                            var path = (p.EpisodePath || '').toLowerCase();
+                            return title.indexOf(search) >= 0 || path.indexOf(search) >= 0;
+                        });
+                    }
+
+                    return pairs;
+                },
+
+                getLibraryName: function (libraryId) {
+                    if (!libraryId) return '—';
+                    var lib = SpecialToMovieConfig.libraries.find(function (l) {
+                        return l.ItemId === libraryId;
+                    });
+                    return lib ? lib.Name : libraryId;
+                },
+
+                populateLibraryFilter: function () {
+                    var select = document.getElementById('pairsLibraryFilter');
+                    while (select.options.length > 1) select.remove(1);
+                    SpecialToMovieConfig.libraries.forEach(function (lib) {
+                        var opt = document.createElement('option');
+                        opt.value = lib.ItemId;
+                        opt.textContent = lib.Name;
+                        select.appendChild(opt);
+                    });
+                },
+
+                renderPairsPage: function () {
+                    var pairs = SpecialToMovieConfig.getFilteredPairs();
+                    var page = SpecialToMovieConfig.pairsPage;
+                    var perPage = SpecialToMovieConfig.pairsPerPage;
+                    var total = pairs.length;
+                    var totalPages = Math.max(1, Math.ceil(total / perPage));
+
+                    if (page >= totalPages) {
+                        page = Math.max(0, totalPages - 1);
+                        SpecialToMovieConfig.pairsPage = page;
+                    }
+
+                    var start = page * perPage;
+                    var end = Math.min(start + perPage, total);
+                    var slice = pairs.slice(start, end);
+
+                    var tbody = document.getElementById('pairsTableBody');
+                    tbody.innerHTML = '';
+
+                    if (total === 0) {
+                        var emptyRow = document.createElement('tr');
+                        var emptyCell = document.createElement('td');
+                        emptyCell.colSpan = 7;
+                        emptyCell.style.cssText = 'padding:8px;color:#888;';
+                        emptyCell.textContent = 'No linked pairs yet.';
+                        emptyRow.appendChild(emptyCell);
+                        tbody.appendChild(emptyRow);
+                    } else {
+                        slice.forEach(function (pair) {
+                            var tr = document.createElement('tr');
+
+                            var tdEp = document.createElement('td');
+                            tdEp.style.padding = '8px';
+                            var epLabel = '';
+                            if (pair.EpisodePath) {
+                                var parts = pair.EpisodePath.replace(/\\/g, '/').split('/');
+                                var fileName = parts[parts.length - 1] || '';
+                                var seriesFolder = parts.length >= 3 ? parts[parts.length - 3] : '';
+                                epLabel = seriesFolder ? seriesFolder + ' — ' + fileName : fileName;
+                            } else {
+                                epLabel = pair.EpisodeItemId || '—';
+                            }
+                            if (pair.EpisodeItemId) {
+                                var epLink = document.createElement('a');
+                                epLink.href = '#!/details?id=' + pair.EpisodeItemId;
+                                epLink.textContent = epLabel;
+                                epLink.title = pair.EpisodePath || pair.EpisodeItemId;
+                                tdEp.appendChild(epLink);
+                            } else {
+                                tdEp.textContent = epLabel;
+                                tdEp.title = pair.EpisodePath || '';
+                            }
+                            tr.appendChild(tdEp);
+
+                            var tdMovie = document.createElement('td');
+                            tdMovie.style.padding = '8px';
+                            var movieLabel = pair.MovieTitle
+                                ? pair.MovieTitle + (pair.MovieYear ? ' (' + pair.MovieYear + ')' : '')
+                                : '—';
+                            if (pair.MovieItemId) {
+                                var movieLink = document.createElement('a');
+                                movieLink.href = '#!/details?id=' + pair.MovieItemId;
+                                movieLink.textContent = movieLabel;
+                                tdMovie.appendChild(movieLink);
+                            } else {
+                                tdMovie.textContent = movieLabel;
+                            }
+                            tr.appendChild(tdMovie);
+
+                            var tdLibrary = document.createElement('td');
+                            tdLibrary.style.cssText = 'padding:8px;font-size:0.85em;';
+                            var srcName = SpecialToMovieConfig.getLibraryName(pair.SourceLibraryId);
+                            var dstName = SpecialToMovieConfig.getLibraryName(pair.DestinationLibraryId);
+                            tdLibrary.textContent = srcName + ' → ' + dstName;
+                            tr.appendChild(tdLibrary);
+
+                            var tdIds = document.createElement('td');
+                            tdIds.style.cssText = 'padding:8px;font-size:0.85em;';
+                            var idLinks = [];
+                            if (pair.ImdbId) {
+                                var a = document.createElement('a');
+                                a.href = 'https://www.imdb.com/title/' + pair.ImdbId;
+                                a.target = '_blank';
+                                a.rel = 'noopener noreferrer';
+                                a.textContent = 'IMDB';
+                                a.title = pair.ImdbId;
+                                idLinks.push(a);
+                            }
+                            if (pair.TmdbMovieId) {
+                                var a = document.createElement('a');
+                                a.href = 'https://www.themoviedb.org/movie/' + pair.TmdbMovieId;
+                                a.target = '_blank';
+                                a.rel = 'noopener noreferrer';
+                                a.textContent = 'TMDB';
+                                a.title = pair.TmdbMovieId;
+                                idLinks.push(a);
+                            }
+                            if (pair.TvdbMovieSlug) {
+                                var a = document.createElement('a');
+                                a.href = 'https://thetvdb.com/movies/' + pair.TvdbMovieSlug;
+                                a.target = '_blank';
+                                a.rel = 'noopener noreferrer';
+                                a.textContent = 'TVDB';
+                                a.title = pair.TvdbMovieId || pair.TvdbMovieSlug;
+                                idLinks.push(a);
+                            } else if (pair.TvdbMovieId) {
+                                var span = document.createElement('span');
+                                span.textContent = 'TVDB: ' + pair.TvdbMovieId;
+                                span.style.color = '#888';
+                                idLinks.push(span);
+                            }
+                            if (idLinks.length === 0) {
+                                tdIds.textContent = '—';
+                            } else {
+                                idLinks.forEach(function (link, i) {
+                                    if (i > 0) tdIds.appendChild(document.createTextNode(' | '));
+                                    tdIds.appendChild(link);
+                                });
+                            }
+                            tr.appendChild(tdIds);
+
+                            var tdStatus = document.createElement('td');
+                            tdStatus.style.padding = '8px';
+                            var status = pair.Status;
+                            var statusNames = { 0: 'DryRun', 1: 'Pending', 2: 'Active', 3: 'Error' };
+                            var statusNum = (typeof status === 'number') ? status : ({ 'DryRun': 0, 'Pending': 1, 'Active': 2, 'Error': 3 }[status] || -1);
+                            tdStatus.textContent = statusNames[statusNum] || status;
+                            if (statusNum === 3 && pair.ErrorMessage) {
+                                tdStatus.title = pair.ErrorMessage;
+                                tdStatus.style.color = '#d9534f';
+                            } else if (statusNum === 2) {
+                                tdStatus.style.color = '#5cb85c';
+                            }
+                            tr.appendChild(tdStatus);
+
+                            var tdCreated = document.createElement('td');
+                            tdCreated.style.padding = '8px';
+                            tdCreated.textContent = pair.CreatedUtc
+                                ? new Date(pair.CreatedUtc).toLocaleDateString()
+                                : '—';
+                            tr.appendChild(tdCreated);
+
+                            var tdAction = document.createElement('td');
+                            tdAction.style.padding = '8px';
+                            var removeBtn = document.createElement('button');
+                            removeBtn.type = 'button';
+                            removeBtn.textContent = 'Remove';
+                            removeBtn.style.cssText = 'cursor:pointer;color:#d9534f;background:none;border:1px solid #d9534f;padding:2px 8px;border-radius:3px;';
+                            removeBtn.addEventListener('click', (function (pairId) {
+                                return function () {
+                                    if (!confirm('Remove this pair from the database?')) return;
+                                    ApiClient.ajax({
+                                        type: 'POST',
+                                        url: ApiClient.getUrl('SpecialToMovie/RemovePair'),
+                                        data: JSON.stringify({ PairId: pairId }),
+                                        contentType: 'application/json',
+                                        dataType: 'json'
+                                    }).then(function () {
+                                        SpecialToMovieConfig.loadPairs();
+                                    }, function () {
+                                        Dashboard.alert('Failed to remove pair.');
+                                    });
+                                };
+                            })(pair.Id));
+                            tdAction.appendChild(removeBtn);
+                            tr.appendChild(tdAction);
+
+                            tbody.appendChild(tr);
+                        });
+                    }
+
+                    document.getElementById('pairsInfo').textContent =
+                        total === 0 ? '' : 'Showing ' + (start + 1) + '–' + end + ' of ' + total;
+
+                    document.getElementById('btnPairsPrev').disabled = (page <= 0);
+                    document.getElementById('btnPairsNext').disabled = (page >= totalPages - 1);
                 }
             };
+
+            var pairsAutoRefreshInterval = null;
 
             document.querySelector('#SpecialToMovieConfigPage')
                 .addEventListener('pageshow', function () {
@@ -461,7 +781,64 @@
                     ApiClient.getVirtualFolders().then(function (folders) {
                         SpecialToMovieConfig.libraries = folders;
                         SpecialToMovieConfig.loadConfig();
+                        SpecialToMovieConfig.populateLibraryFilter();
                     });
+                    SpecialToMovieConfig.loadPairs();
+
+                    // Auto-refresh pairs every 10 seconds
+                    if (pairsAutoRefreshInterval) clearInterval(pairsAutoRefreshInterval);
+                    pairsAutoRefreshInterval = setInterval(function () {
+                        SpecialToMovieConfig.loadPairs();
+                    }, 10000);
+                });
+
+            document.querySelector('#SpecialToMovieConfigPage')
+                .addEventListener('pagehide', function () {
+                    if (pairsAutoRefreshInterval) {
+                        clearInterval(pairsAutoRefreshInterval);
+                        pairsAutoRefreshInterval = null;
+                    }
+                });
+
+            document.getElementById('btnRefreshPairs')
+                .addEventListener('click', function () {
+                    SpecialToMovieConfig.loadPairs();
+                });
+
+            document.getElementById('btnPairsPrev')
+                .addEventListener('click', function () {
+                    if (SpecialToMovieConfig.pairsPage > 0) {
+                        SpecialToMovieConfig.pairsPage--;
+                        SpecialToMovieConfig.renderPairsPage();
+                    }
+                });
+
+            document.getElementById('btnPairsNext')
+                .addEventListener('click', function () {
+                    var filtered = SpecialToMovieConfig.getFilteredPairs();
+                    var totalPages = Math.ceil(filtered.length / SpecialToMovieConfig.pairsPerPage);
+                    if (SpecialToMovieConfig.pairsPage < totalPages - 1) {
+                        SpecialToMovieConfig.pairsPage++;
+                        SpecialToMovieConfig.renderPairsPage();
+                    }
+                });
+
+            document.getElementById('pairsSearch')
+                .addEventListener('input', function () {
+                    SpecialToMovieConfig.pairsPage = 0;
+                    SpecialToMovieConfig.renderPairsPage();
+                });
+
+            document.getElementById('pairsStatusFilter')
+                .addEventListener('change', function () {
+                    SpecialToMovieConfig.pairsPage = 0;
+                    SpecialToMovieConfig.renderPairsPage();
+                });
+
+            document.getElementById('pairsLibraryFilter')
+                .addEventListener('change', function () {
+                    SpecialToMovieConfig.pairsPage = 0;
+                    SpecialToMovieConfig.renderPairsPage();
                 });
 
             document.querySelector('#SpecialToMovieConfigForm')
@@ -474,12 +851,53 @@
             document.querySelector('#chkDryRun')
                 .addEventListener('change', function () {
                     SpecialToMovieConfig.updateDryRunBanner(this.checked);
-                    SpecialToMovieConfig.updateRemoveAllButton(this.checked);
                 });
 
             document.querySelector('#chkAutoDelete')
                 .addEventListener('change', function () {
                     SpecialToMovieConfig.updateTwoWayState(this.checked);
+                });
+
+            document.querySelector('#btnTestTmdb')
+                .addEventListener('click', function () {
+                    var key = document.querySelector('#txtTmdbApiKey').value.trim();
+                    var resultSpan = document.getElementById('tmdbTestResult');
+                    resultSpan.textContent = 'Testing...';
+                    resultSpan.style.color = '';
+                    ApiClient.ajax({
+                        type: 'POST',
+                        url: ApiClient.getUrl('SpecialToMovie/TestTmdb'),
+                        data: JSON.stringify({ ApiKey: key }),
+                        contentType: 'application/json',
+                        dataType: 'json'
+                    }).then(function (result) {
+                        resultSpan.textContent = result.Message;
+                        resultSpan.style.color = result.Success ? '#5cb85c' : '#d9534f';
+                    }, function () {
+                        resultSpan.textContent = 'Request failed';
+                        resultSpan.style.color = '#d9534f';
+                    });
+                });
+
+            document.querySelector('#btnTestTvdb')
+                .addEventListener('click', function () {
+                    var key = document.querySelector('#txtTvdbApiKey').value.trim();
+                    var resultSpan = document.getElementById('tvdbTestResult');
+                    resultSpan.textContent = 'Testing...';
+                    resultSpan.style.color = '';
+                    ApiClient.ajax({
+                        type: 'POST',
+                        url: ApiClient.getUrl('SpecialToMovie/TestTvdb'),
+                        data: JSON.stringify({ ApiKey: key }),
+                        contentType: 'application/json',
+                        dataType: 'json'
+                    }).then(function (result) {
+                        resultSpan.textContent = result.Message;
+                        resultSpan.style.color = result.Success ? '#5cb85c' : '#d9534f';
+                    }, function () {
+                        resultSpan.textContent = 'Request failed';
+                        resultSpan.style.color = '#d9534f';
+                    });
                 });
 
             document.querySelector('#btnAddMapping')
@@ -504,34 +922,55 @@
 
             document.querySelector('#btnRemoveAll')
                 .addEventListener('click', function () {
-                    if (document.querySelector('#chkDryRun').checked) {
-                        return;
-                    }
                     var msg = 'This will delete all hard links created by this plugin and transition pairs back to DryRun status. ' +
                               'Your original TV episode files will NOT be affected. The linked movie entries will disappear ' +
                               'from your movie libraries on the next library scan. This cannot be undone.';
                     if (confirm(msg)) {
+                        if (!confirm('Are you sure? This will delete files from disk.')) {
+                            return;
+                        }
                         ApiClient.ajax({
                             type: 'POST',
-                            url: ApiClient.getUrl('SpecialToMovie/RemoveAllLinks')
+                            url: ApiClient.getUrl('SpecialToMovie/RemoveAllLinks'),
+                            dataType: 'json'
                         }).then(function (result) {
-                            Dashboard.alert('Removed ' + result.Removed + ' hard links. Pairs preserved in database.');
+                            Dashboard.alert('Removed ' + (result.Removed || 0) + ' hard links. Pairs preserved in database.');
                         }, function () {
                             Dashboard.alert('Failed to remove hard links. Check the server log.');
                         });
                     }
                 });
 
+            document.querySelector('#btnClearDatabase')
+                .addEventListener('click', function () {
+                    var msg = 'This will permanently delete ALL pair records from the database. ' +
+                              'Match data, TMDB/TVDB IDs, and link history will be lost. ' +
+                              'Hard link files on disk will NOT be removed.';
+                    if (confirm(msg)) {
+                        if (!confirm('Are you sure? This cannot be undone.')) {
+                            return;
+                        }
+                        ApiClient.ajax({
+                            type: 'POST',
+                            url: ApiClient.getUrl('SpecialToMovie/ClearDatabase'),
+                            dataType: 'json'
+                        }).then(function (result) {
+                            Dashboard.alert('Database cleared. ' + (result.Removed || 0) + ' pairs removed.');
+                        }, function () {
+                            Dashboard.alert('Failed to clear database. Check the server log.');
+                        });
+                    }
+                });
+
             document.querySelector('#btnRunScan')
                 .addEventListener('click', function () {
-                    Dashboard.alert('Full scan started. This may take a while...');
                     ApiClient.ajax({
                         type: 'POST',
                         url: ApiClient.getUrl('SpecialToMovie/RunFullScan')
                     }).then(function () {
-                        Dashboard.alert('Full scan complete.');
+                        Dashboard.alert('Full scan started. Check the server log for progress.');
                     }, function () {
-                        Dashboard.alert('Full scan failed. Check the server log.');
+                        Dashboard.alert('Failed to start scan. Check the server log.');
                     });
                 });
         </script>

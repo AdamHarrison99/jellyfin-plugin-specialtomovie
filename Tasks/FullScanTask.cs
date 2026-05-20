@@ -15,7 +15,7 @@ public class FullScanTask : IScheduledTask
         _logger = logger;
     }
 
-    public string Name => "SpecialToMovie: Full Scan";
+    public string Name => "Full Scan";
 
     public string Key => "SpecialToMovieFullScan";
 
@@ -28,7 +28,7 @@ public class FullScanTask : IScheduledTask
         _logger.LogInformation("Starting SpecialToMovie full scan");
         progress.Report(0);
 
-        await _detectionService.RunFullScanAsync(cancellationToken).ConfigureAwait(false);
+        await _detectionService.RunFullScanAsync(progress, cancellationToken).ConfigureAwait(false);
 
         progress.Report(100);
         _logger.LogInformation("SpecialToMovie full scan finished");

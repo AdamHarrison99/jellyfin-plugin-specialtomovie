@@ -33,7 +33,7 @@ public class CleanupTask : IScheduledTask
         _logger = logger;
     }
 
-    public string Name => "SpecialToMovie: Cleanup";
+    public string Name => "Cleanup";
 
     public string Key => "SpecialToMovieCleanup";
 
@@ -108,6 +108,7 @@ public class CleanupTask : IScheduledTask
             if (!dryRunMode && !pair.IsExistingMovie && !string.IsNullOrEmpty(pair.HardLinkPath))
             {
                 _hardLinkService.DeleteMovieFolder(pair.HardLinkPath);
+                RemoveMovieFromLibrary(pair.MovieItemId);
             }
 
             _pairStore.Remove(pair.Id);
@@ -186,5 +187,29 @@ public class CleanupTask : IScheduledTask
 
         moviesByPath.TryGetValue(hardLinkPath, out var movie);
         return movie;
+    }
+
+    private void RemoveMovieFromLibrary(Guid? movieItemId)
+    {
+        if (movieItemId == null || movieItemId == Guid.Empty)
+        {
+            return;
+        }
+
+        var item = _libraryManager.GetItemById(movieItemId.Value);
+        if (item == null)
+        {
+            return;
+        }
+
+        try
+        {
+            _libraryManager.DeleteItem(item, new DeleteOptions { DeleteFileLocation = false });
+            _logger.LogInformation("Removed movie {Name} from Jellyfin library", item.Name);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to remove movie {Id} from Jellyfin library", movieItemId);
+        }
     }
 }

@@ -10,5 +10,7 @@ public record MovieMatch
 
     public string? TvdbMovieId { get; init; }
 
+    public string? TvdbMovieSlug { get; init; }
+
     public string? ImdbId { get; init; }
 }

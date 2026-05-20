@@ -26,7 +26,7 @@ public class PluginConfiguration : BasePluginConfiguration
 
     public List<LibraryMapping> LibraryMappings { get; set; } = new();
 
-    public Dictionary<string, string> ForceLinks { get; set; } = new();
+    public List<ForceLinkEntry> ForceLinks { get; set; } = new();
 
     public List<string> IgnoreList { get; set; } = new();
 
@@ -49,4 +49,11 @@ public class LibraryMapping
     public string DestinationPath { get; set; } = string.Empty;
 
     public bool Enabled { get; set; } = true;
+}
+
+public class ForceLinkEntry
+{
+    public string EpisodeKey { get; set; } = string.Empty;
+
+    public string MovieTitle { get; set; } = string.Empty;
 }

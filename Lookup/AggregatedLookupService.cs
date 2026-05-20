@@ -37,7 +37,7 @@ public class AggregatedLookupService
                 episode.Name, tmdb.Title, tvdb.Title);
 
             // Prefer TMDB for primary metadata, merge in TVDB movie ID
-            return tmdb with { TvdbMovieId = tvdb.TvdbMovieId };
+            return tmdb with { TvdbMovieId = tvdb.TvdbMovieId, TvdbMovieSlug = tvdb.TvdbMovieSlug };
         }
 
         if (tmdb != null)

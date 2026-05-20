@@ -142,6 +142,7 @@ public class LibraryEventHandler : IHostedService, IDisposable
             if (config.AutoDeleteOnRemoval && !pair.IsExistingMovie && !string.IsNullOrEmpty(pair.HardLinkPath))
             {
                 _hardLinkService.DeleteMovieFolder(pair.HardLinkPath);
+                RemoveMovieFromLibrary(pair.MovieItemId);
             }
             else if (!string.IsNullOrEmpty(pair.HardLinkPath))
             {
@@ -233,9 +234,9 @@ public class LibraryEventHandler : IHostedService, IDisposable
             }
 
             // Delete companion files: subtitles (.en.srt, .eng.forced.srt), images, nfo, etc.
+            int companionDeleted = 0, companionFailed = 0;
             foreach (var companion in Directory.EnumerateFiles(episodeDir, $"{episodeNameWithoutExt}*"))
             {
-                // Skip — already deleted above
                 if (string.Equals(Path.GetFullPath(companion), resolvedPath, StringComparison.OrdinalIgnoreCase))
                 {
                     continue;
@@ -244,10 +245,11 @@ public class LibraryEventHandler : IHostedService, IDisposable
                 try
                 {
                     File.Delete(companion);
-                    _logger.LogDebug("Two-way deletion: removed companion file {Path}", companion);
+                    companionDeleted++;
                 }
                 catch (Exception ex)
                 {
+                    companionFailed++;
                     _logger.LogWarning(ex, "Failed to delete companion file {Path}", companion);
                 }
             }
@@ -258,17 +260,49 @@ public class LibraryEventHandler : IHostedService, IDisposable
                 try
                 {
                     Directory.Delete(companionDir, recursive: true);
-                    _logger.LogDebug("Two-way deletion: removed companion directory {Path}", companionDir);
+                    companionDeleted++;
                 }
                 catch (Exception ex)
                 {
+                    companionFailed++;
                     _logger.LogWarning(ex, "Failed to delete companion directory {Path}", companionDir);
                 }
+            }
+
+            if (companionDeleted > 0 || companionFailed > 0)
+            {
+                _logger.LogInformation(
+                    "Two-way deletion companion cleanup: {Deleted} removed, {Failed} failed for {Path}",
+                    companionDeleted, companionFailed, pair.EpisodePath);
             }
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to delete original episode {Path}", pair.EpisodePath);
+        }
+    }
+
+    private void RemoveMovieFromLibrary(Guid? movieItemId)
+    {
+        if (movieItemId == null || movieItemId == Guid.Empty)
+        {
+            return;
+        }
+
+        var item = _libraryManager.GetItemById(movieItemId.Value);
+        if (item == null)
+        {
+            return;
+        }
+
+        try
+        {
+            _libraryManager.DeleteItem(item, new DeleteOptions { DeleteFileLocation = false });
+            _logger.LogInformation("Removed movie {Name} from Jellyfin library", item.Name);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to remove movie {Id} from Jellyfin library", movieItemId);
         }
     }
 }

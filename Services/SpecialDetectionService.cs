@@ -76,10 +76,12 @@ public class SpecialDetectionService
 
         // Check force links first
         MovieMatch? match = null;
-        if (snapshot.ForceLinks.TryGetValue(episodeKey, out var forcedMovie))
+        var forceLink = snapshot.ForceLinks.FirstOrDefault(f =>
+            string.Equals(f.EpisodeKey, episodeKey, StringComparison.OrdinalIgnoreCase));
+        if (forceLink != null)
         {
-            match = ParseForcedMovie(forcedMovie);
-            _logger.LogInformation("Using force link for {Key}: {Movie}", episodeKey, forcedMovie);
+            match = ParseForcedMovie(forceLink.MovieTitle);
+            _logger.LogInformation("Using force link for {Key}: {Movie}", episodeKey, forceLink.MovieTitle);
         }
 
         match ??= await _lookupService.LookupAsync(episode, cancellationToken).ConfigureAwait(false);
@@ -118,6 +120,7 @@ public class SpecialDetectionService
                 MovieYear = match.Year,
                 TmdbMovieId = match.TmdbMovieId,
                 TvdbMovieId = match.TvdbMovieId,
+                TvdbMovieSlug = match.TvdbMovieSlug,
                 ImdbId = match.ImdbId,
                 Status = PairStatus.Active
             };
@@ -145,6 +148,7 @@ public class SpecialDetectionService
                 MovieYear = match.Year,
                 TmdbMovieId = match.TmdbMovieId,
                 TvdbMovieId = match.TvdbMovieId,
+                TvdbMovieSlug = match.TvdbMovieSlug,
                 ImdbId = match.ImdbId,
                 Status = PairStatus.DryRun
             };
@@ -199,6 +203,7 @@ public class SpecialDetectionService
             MovieYear = match.Year,
             TmdbMovieId = match.TmdbMovieId,
             TvdbMovieId = match.TvdbMovieId,
+                TvdbMovieSlug = match.TvdbMovieSlug,
             ImdbId = match.ImdbId,
             Status = PairStatus.Pending
         };
@@ -210,7 +215,7 @@ public class SpecialDetectionService
             episode.Name, match.Title, match.Year, linkPath);
     }
 
-    public async Task RunFullScanAsync(CancellationToken cancellationToken = default)
+    public async Task RunFullScanAsync(IProgress<double>? progress = null, CancellationToken cancellationToken = default)
     {
         var config = Plugin.Instance?.Configuration;
         if (config == null || config.LibraryMappings.Count == 0)
@@ -237,19 +242,22 @@ public class SpecialDetectionService
             Recursive = true
         });
 
-        _logger.LogInformation("Full scan: found {Count} Season 0 episodes", episodes.Count);
+        var total = episodes.Count;
+        _logger.LogInformation("Full scan: found {Count} Season 0 episodes", total);
 
-        foreach (var item in episodes)
+        for (int i = 0; i < total; i++)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (item is Episode episode)
+            if (episodes[i] is Episode episode)
             {
                 await ProcessEpisodeAsync(episode, snapshot, allMovies, virtualFolders, cancellationToken).ConfigureAwait(false);
 
                 // Small delay between lookups to respect rate limits
                 await Task.Delay(100, cancellationToken).ConfigureAwait(false);
             }
+
+            progress?.Report((double)(i + 1) / total * 90);
         }
 
         // Promote DryRun pairs if dry run was just disabled
@@ -303,9 +311,15 @@ public class SpecialDetectionService
 
     private static Guid? GetLibraryId(BaseItem item, IReadOnlyList<VirtualFolderInfo> folders)
     {
+        if (string.IsNullOrEmpty(item.Path))
+        {
+            return null;
+        }
+
         foreach (var folder in folders)
         {
-            if (folder.Locations.Any(loc => item.Path.StartsWith(loc, StringComparison.OrdinalIgnoreCase)))
+            if (folder.Locations.Any(loc =>
+                !string.IsNullOrEmpty(loc) && item.Path.StartsWith(loc, StringComparison.OrdinalIgnoreCase)))
             {
                 if (Guid.TryParse(folder.ItemId, out var id))
                 {
@@ -374,6 +388,7 @@ public class SpecialDetectionService
             MovieYear = match.Year,
             TmdbMovieId = match.TmdbMovieId,
             TvdbMovieId = match.TvdbMovieId,
+                TvdbMovieSlug = match.TvdbMovieSlug,
             ImdbId = match.ImdbId,
             Status = PairStatus.Error,
             ErrorMessage = error
@@ -432,7 +447,7 @@ public class SpecialDetectionService
     private sealed class ConfigSnapshot
     {
         public required List<LibraryMapping> LibraryMappings { get; init; }
-        public required Dictionary<string, string> ForceLinks { get; init; }
+        public required List<ForceLinkEntry> ForceLinks { get; init; }
         public required List<string> IgnoreList { get; init; }
 
         public static ConfigSnapshot From(PluginConfiguration config)
@@ -440,7 +455,7 @@ public class SpecialDetectionService
             return new ConfigSnapshot
             {
                 LibraryMappings = new List<LibraryMapping>(config.LibraryMappings),
-                ForceLinks = new Dictionary<string, string>(config.ForceLinks, StringComparer.OrdinalIgnoreCase),
+                ForceLinks = new List<ForceLinkEntry>(config.ForceLinks),
                 IgnoreList = new List<string>(config.IgnoreList)
             };
         }

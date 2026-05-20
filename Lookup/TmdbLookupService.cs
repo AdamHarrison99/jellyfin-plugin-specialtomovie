@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Jellyfin.Plugin.SpecialToMovie.Models;
+using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Model.Entities;
 using Microsoft.Extensions.Logging;
@@ -20,12 +21,14 @@ public class TmdbLookupService : IMetadataLookupService, IDisposable
     };
 
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly IServerConfigurationManager _configManager;
     private readonly ILogger<TmdbLookupService> _logger;
     private readonly SemaphoreSlim _rateLimiter = new(30, 30);
 
-    public TmdbLookupService(IHttpClientFactory httpClientFactory, ILogger<TmdbLookupService> logger)
+    public TmdbLookupService(IHttpClientFactory httpClientFactory, IServerConfigurationManager configManager, ILogger<TmdbLookupService> logger)
     {
         _httpClientFactory = httpClientFactory;
+        _configManager = configManager;
         _logger = logger;
     }
 
@@ -107,7 +110,8 @@ public class TmdbLookupService : IMetadataLookupService, IDisposable
 
     private async Task<MovieMatch?> FindMovieByImdbIdAsync(string imdbId, string apiKey, CancellationToken cancellationToken)
     {
-        var url = $"{BaseUrl}/find/{imdbId}?api_key={apiKey}&external_source=imdb_id";
+        var lang = _configManager.Configuration.PreferredMetadataLanguage ?? "en";
+        var url = $"{BaseUrl}/find/{imdbId}?api_key={apiKey}&external_source=imdb_id&language={lang}";
         var response = await SendWithRetryAsync(url, cancellationToken).ConfigureAwait(false);
         if (response == null)
         {
