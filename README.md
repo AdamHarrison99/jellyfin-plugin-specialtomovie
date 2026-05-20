@@ -45,19 +45,18 @@ Manual hard links solve the file deduplication problem, but **watch status still
 
 ### Manual Installation
 
-1. Download the latest release from the [Releases](https://github.com/AdamHarrison99/releases) page
-2. Extract the `.dll` file
-3. Copy it to your Jellyfin plugins directory:
+1. Download `Jellyfin.Plugin.SpecialToMovie.dll` from the [latest release](https://github.com/AdamHarrison99/jellyfin-plugin-specialtomovie/releases/latest)
+2. Copy it to your Jellyfin plugins directory in a `SpecialToMovie` subfolder:
    - **Linux**: `/var/lib/jellyfin/plugins/SpecialToMovie/`
    - **Windows**: `C:\ProgramData\Jellyfin\Server\plugins\SpecialToMovie\`
    - **Docker**: Mount or copy into `/config/plugins/SpecialToMovie/` inside the container
-4. Restart Jellyfin
+3. Restart Jellyfin
 
 ### Build From Source
 
 ```bash
-git clone https://github.com/AdamHarrison99/JellyfinPlugin-SpecialToMovie.git
-cd JellyfinPlugin-SpecialToMovie/Jellyfin.Plugin.SpecialToMovie
+git clone https://github.com/AdamHarrison99/jellyfin-plugin-specialtomovie.git
+cd jellyfin-plugin-specialtomovie
 dotnet build -c Release
 ```
 
