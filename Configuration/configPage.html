@@ -211,6 +211,11 @@
                             <select id="pairsLibraryFilter" is="emby-select" style="min-width:150px;">
                                 <option value="">All Libraries</option>
                             </select>
+                            <select id="pairsSourceFilter" is="emby-select" style="min-width:130px;">
+                                <option value="">All Sources</option>
+                                <option value="plugin">Plugin-created</option>
+                                <option value="existing">Pre-existing</option>
+                            </select>
                         </div>
                         <div id="pairsControls" style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
                             <span id="pairsInfo" style="color:#888;"></span>
@@ -226,13 +231,14 @@
                                     <th style="text-align:left;padding:8px;">Movie</th>
                                     <th style="text-align:left;padding:8px;">Library</th>
                                     <th style="text-align:left;padding:8px;">IDs</th>
+                                    <th style="text-align:left;padding:8px;">Source</th>
                                     <th style="text-align:left;padding:8px;">Status</th>
                                     <th style="text-align:left;padding:8px;">Created</th>
                                     <th style="text-align:left;padding:8px;"></th>
                                 </tr>
                             </thead>
                             <tbody id="pairsTableBody">
-                                <tr><td colspan="5" style="padding:8px;color:#888;">No linked pairs yet.</td></tr>
+                                <tr><td colspan="8" style="padding:8px;color:#888;">No linked pairs yet.</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -547,7 +553,14 @@
                     var search = (document.getElementById('pairsSearch').value || '').toLowerCase().trim();
                     var statusFilter = document.getElementById('pairsStatusFilter').value;
                     var libraryFilter = document.getElementById('pairsLibraryFilter').value;
+                    var sourceFilter = document.getElementById('pairsSourceFilter').value;
                     var pairs = SpecialToMovieConfig.allPairs;
+
+                    if (sourceFilter === 'existing') {
+                        pairs = pairs.filter(function (p) { return p.IsExistingMovie === true; });
+                    } else if (sourceFilter === 'plugin') {
+                        pairs = pairs.filter(function (p) { return !p.IsExistingMovie; });
+                    }
 
                     if (statusFilter !== '') {
                         var statusNum = parseInt(statusFilter, 10);
@@ -616,7 +629,7 @@
                     if (total === 0) {
                         var emptyRow = document.createElement('tr');
                         var emptyCell = document.createElement('td');
-                        emptyCell.colSpan = 7;
+                        emptyCell.colSpan = 8;
                         emptyCell.style.cssText = 'padding:8px;color:#888;';
                         emptyCell.textContent = 'No linked pairs yet.';
                         emptyRow.appendChild(emptyCell);
@@ -714,6 +727,17 @@
                                 });
                             }
                             tr.appendChild(tdIds);
+
+                            var tdSource = document.createElement('td');
+                            tdSource.style.cssText = 'padding:8px;font-size:0.85em;';
+                            if (pair.IsExistingMovie) {
+                                tdSource.textContent = 'Pre-existing';
+                                tdSource.style.color = '#f0ad4e';
+                            } else {
+                                tdSource.textContent = 'Plugin';
+                                tdSource.style.color = '#5bc0de';
+                            }
+                            tr.appendChild(tdSource);
 
                             var tdStatus = document.createElement('td');
                             tdStatus.style.padding = '8px';
@@ -836,6 +860,12 @@
                 });
 
             document.getElementById('pairsLibraryFilter')
+                .addEventListener('change', function () {
+                    SpecialToMovieConfig.pairsPage = 0;
+                    SpecialToMovieConfig.renderPairsPage();
+                });
+
+            document.getElementById('pairsSourceFilter')
                 .addEventListener('change', function () {
                     SpecialToMovieConfig.pairsPage = 0;
                     SpecialToMovieConfig.renderPairsPage();

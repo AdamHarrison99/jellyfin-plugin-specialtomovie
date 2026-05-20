@@ -76,7 +76,7 @@ public class TmdbLookupService : IMetadataLookupService, IDisposable
             var found = await FindMovieByImdbIdAsync(match.ImdbId, config.TmdbApiKey, cancellationToken).ConfigureAwait(false);
             if (found != null)
             {
-                return match with { TmdbMovieId = found.TmdbMovieId, ImdbId = found.ImdbId };
+                return match with { Title = found.Title, TmdbMovieId = found.TmdbMovieId, ImdbId = found.ImdbId };
             }
         }
 
@@ -116,11 +116,13 @@ public class TmdbLookupService : IMetadataLookupService, IDisposable
             year = releaseDate.Year;
         }
 
+        var title = await ResolveLocalizedTitleAsync(best.Id, best.Title, best.OriginalTitle, config.TmdbApiKey, cancellationToken).ConfigureAwait(false);
+
         _logger.LogInformation(
             "TMDB search enriched tag-based match: {Title} ({Year}), TMDB ID {TmdbId}",
-            best.Title, year, best.Id);
+            title, year, best.Id);
 
-        return match with { TmdbMovieId = best.Id.ToString() };
+        return match with { Title = title, TmdbMovieId = best.Id.ToString() };
     }
 
     private async Task<string?> GetImdbIdFromTmdbAsync(Episode episode, string apiKey, CancellationToken cancellationToken)
@@ -185,16 +187,80 @@ public class TmdbLookupService : IMetadataLookupService, IDisposable
             year = releaseDate.Year;
         }
 
+        var title = await ResolveLocalizedTitleAsync(movie.Id, movie.Title, movie.OriginalTitle, apiKey, cancellationToken).ConfigureAwait(false);
+
         _logger.LogInformation(
             "TMDB matched IMDB {ImdbId} to movie: {Title} ({Year}), TMDB ID {TmdbId}",
-            imdbId, movie.Title, year, movie.Id);
+            imdbId, title, year, movie.Id);
 
         return new MovieMatch
         {
-            Title = movie.Title,
+            Title = title,
             Year = year,
             TmdbMovieId = movie.Id.ToString(),
             ImdbId = imdbId
+        };
+    }
+
+    private async Task<string> ResolveLocalizedTitleAsync(int movieId, string title, string? originalTitle, string apiKey, CancellationToken cancellationToken)
+    {
+        if (!string.Equals(title, originalTitle, StringComparison.Ordinal))
+        {
+            return title;
+        }
+
+        var country = GetUserCountryCode();
+        var url = $"{BaseUrl}/movie/{movieId}/alternative_titles?api_key={apiKey}";
+        var response = await SendWithRetryAsync(url, cancellationToken).ConfigureAwait(false);
+        if (response == null)
+        {
+            return title;
+        }
+
+        var altTitles = JsonSerializer.Deserialize<TmdbAlternativeTitlesResult>(response, JsonOptions);
+        if (altTitles?.Titles == null || altTitles.Titles.Count == 0)
+        {
+            return title;
+        }
+
+        var localized = altTitles.Titles.FirstOrDefault(t =>
+            string.Equals(t.Country, country, StringComparison.OrdinalIgnoreCase));
+        localized ??= altTitles.Titles.FirstOrDefault(t =>
+            string.Equals(t.Country, "US", StringComparison.OrdinalIgnoreCase));
+        localized ??= altTitles.Titles.FirstOrDefault(t =>
+            string.Equals(t.Country, "GB", StringComparison.OrdinalIgnoreCase));
+
+        if (!string.IsNullOrEmpty(localized?.Title))
+        {
+            _logger.LogDebug("Using alternative title '{AltTitle}' ({Country}) instead of '{Original}'",
+                localized.Title, localized.Country, title);
+            return localized.Title;
+        }
+
+        return title;
+    }
+
+    private string GetUserCountryCode()
+    {
+        var country = _configManager.Configuration.MetadataCountryCode;
+        if (!string.IsNullOrEmpty(country))
+        {
+            return country;
+        }
+
+        var lang = _configManager.Configuration.PreferredMetadataLanguage ?? "en";
+        return lang switch
+        {
+            "en" => "US",
+            "ja" => "JP",
+            "de" => "DE",
+            "fr" => "FR",
+            "es" => "ES",
+            "it" => "IT",
+            "pt" => "BR",
+            "ko" => "KR",
+            "zh" => "CN",
+            _ => "US"
         };
     }
 
@@ -284,6 +350,9 @@ public class TmdbLookupService : IMetadataLookupService, IDisposable
         [JsonPropertyName("title")]
         public string Title { get; set; } = string.Empty;
 
+        [JsonPropertyName("original_title")]
+        public string? OriginalTitle { get; set; }
+
         [JsonPropertyName("release_date")]
         public string? ReleaseDate { get; set; }
     }
@@ -292,5 +361,20 @@ public class TmdbLookupService : IMetadataLookupService, IDisposable
     {
         [JsonPropertyName("imdb_id")]
         public string? ImdbId { get; set; }
+    }
+
+    private sealed class TmdbAlternativeTitlesResult
+    {
+        [JsonPropertyName("titles")]
+        public List<TmdbAlternativeTitle>? Titles { get; set; }
+    }
+
+    private sealed class TmdbAlternativeTitle
+    {
+        [JsonPropertyName("iso_3166_1")]
+        public string? Country { get; set; }
+
+        [JsonPropertyName("title")]
+        public string? Title { get; set; }
     }
 }
