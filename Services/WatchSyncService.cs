@@ -144,24 +144,14 @@ public class WatchSyncService : IHostedService, IDisposable
             return (null, null, null);
         }
 
-        // If one is played and the other isn't, the played one wins
-        if (episodeData.Played && !movieData.Played)
-        {
-            return (episodeData, movieData, movieItem);
-        }
-
-        if (movieData.Played && !episodeData.Played)
+        // Movie wins only when the episode has no progress at all
+        if (movieHasProgress && !episodeHasProgress)
         {
             return (movieData, episodeData, episodeItem);
         }
 
-        // Both played or both have partial progress — pick the one with more play count / later date
-        if (episodeData.PlayCount >= movieData.PlayCount)
-        {
-            return (episodeData, movieData, movieItem);
-        }
-
-        return (movieData, episodeData, episodeItem);
+        // Episode (TV special) has priority in all other cases
+        return (episodeData, movieData, movieItem);
     }
 
     private void OnUserDataSaved(object? sender, UserDataSaveEventArgs e)

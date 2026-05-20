@@ -266,6 +266,13 @@ public class SpecialDetectionService
             await PromoteDryRunPairsAsync(snapshot, allMovies, virtualFolders, cancellationToken).ConfigureAwait(false);
         }
 
+        // Sync watch state for all Active pairs (catches pairs that existed before watch sync was added,
+        // or pairs whose watch state drifted while the plugin was stopped)
+        if (!config.DryRunMode)
+        {
+            SyncAllActivePairs();
+        }
+
         _logger.LogInformation("Full scan complete");
     }
 
@@ -294,6 +301,21 @@ public class SpecialDetectionService
             // Remove the DryRun pair so ProcessEpisodeAsync can recreate it as Pending
             _pairStore.Remove(pair.Id);
             await ProcessEpisodeAsync(episode, snapshot, allMovies, virtualFolders, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private void SyncAllActivePairs()
+    {
+        var activePairs = _pairStore.GetAll().Where(p => p.Status == PairStatus.Active).ToList();
+        if (activePairs.Count == 0)
+        {
+            return;
+        }
+
+        _logger.LogInformation("Syncing watch state for {Count} active pairs", activePairs.Count);
+        foreach (var pair in activePairs)
+        {
+            _watchSyncService.SyncInitialWatchState(pair);
         }
     }
 

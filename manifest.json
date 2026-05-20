@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "1.0.1.0",
+        "changelog": "Fix watch status not syncing for existing paired items during full scan. TV special watch state now always takes priority unless only the movie has progress.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/AdamHarrison99/jellyfin-plugin-specialtomovie",
+        "checksum": "d0f1e49b19211b69a8947a9ba3e94ad3",
+        "timestamp": "2026-05-20T00:00:00Z"
+      },
+      {
         "version": "1.0.0.0",
         "changelog": "Initial release",
         "targetAbi": "10.11.0.0",
