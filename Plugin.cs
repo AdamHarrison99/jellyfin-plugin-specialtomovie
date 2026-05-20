@@ -23,7 +23,7 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
 
     public static Plugin? Instance { get; private set; }
 
-    public override string Name => "Special To Movie";
+    public override string Name => "SpecialToMovie";
 
     public override Guid Id => PluginId;
 
