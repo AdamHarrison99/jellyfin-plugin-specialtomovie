@@ -63,15 +63,68 @@ public class TmdbLookupService : IMetadataLookupService, IDisposable
         return await FindMovieByImdbIdAsync(imdbId, config.TmdbApiKey, cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task<string?> GetImdbIdFromTmdbAsync(Episode episode, string apiKey, CancellationToken cancellationToken)
+    public async Task<MovieMatch?> EnrichWithTmdbAsync(MovieMatch match, CancellationToken cancellationToken = default)
     {
-        var tmdbId = episode.GetProviderId(MetadataProvider.Tmdb);
-        if (string.IsNullOrEmpty(tmdbId))
+        var config = Plugin.Instance?.Configuration;
+        if (config == null || string.IsNullOrEmpty(config.TmdbApiKey))
         {
-            return null;
+            return match;
         }
 
-        // Need the series TMDB ID and season/episode numbers
+        if (!string.IsNullOrEmpty(match.ImdbId))
+        {
+            var found = await FindMovieByImdbIdAsync(match.ImdbId, config.TmdbApiKey, cancellationToken).ConfigureAwait(false);
+            if (found != null)
+            {
+                return match with { TmdbMovieId = found.TmdbMovieId, ImdbId = found.ImdbId };
+            }
+        }
+
+        if (string.IsNullOrEmpty(match.Title))
+        {
+            return match;
+        }
+
+        var lang = _configManager.Configuration.PreferredMetadataLanguage ?? "en";
+        var encodedTitle = Uri.EscapeDataString(match.Title);
+        var url = $"{BaseUrl}/search/movie?api_key={config.TmdbApiKey}&query={encodedTitle}&language={lang}";
+        if (match.Year.HasValue)
+        {
+            url += $"&year={match.Year.Value}";
+        }
+
+        var response = await SendWithRetryAsync(url, cancellationToken).ConfigureAwait(false);
+        if (response == null)
+        {
+            return match;
+        }
+
+        var searchResult = JsonSerializer.Deserialize<TmdbSearchResult>(response, JsonOptions);
+        if (searchResult?.Results == null || searchResult.Results.Count == 0)
+        {
+            _logger.LogDebug("TMDB search returned no results for '{Title}' ({Year})", match.Title, match.Year);
+            return match;
+        }
+
+        var best = searchResult.Results.FirstOrDefault(m =>
+            string.Equals(m.Title, match.Title, StringComparison.OrdinalIgnoreCase));
+        best ??= searchResult.Results[0];
+
+        int? year = null;
+        if (DateOnly.TryParse(best.ReleaseDate, out var releaseDate))
+        {
+            year = releaseDate.Year;
+        }
+
+        _logger.LogInformation(
+            "TMDB search enriched tag-based match: {Title} ({Year}), TMDB ID {TmdbId}",
+            best.Title, year, best.Id);
+
+        return match with { TmdbMovieId = best.Id.ToString() };
+    }
+
+    private async Task<string?> GetImdbIdFromTmdbAsync(Episode episode, string apiKey, CancellationToken cancellationToken)
+    {
         var series = episode.Series;
         if (series == null)
         {
@@ -215,6 +268,12 @@ public class TmdbLookupService : IMetadataLookupService, IDisposable
     {
         [JsonPropertyName("movie_results")]
         public List<TmdbMovie>? MovieResults { get; set; }
+    }
+
+    private sealed class TmdbSearchResult
+    {
+        [JsonPropertyName("results")]
+        public List<TmdbMovie>? Results { get; set; }
     }
 
     private sealed class TmdbMovie

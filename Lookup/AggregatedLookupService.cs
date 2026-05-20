@@ -49,6 +49,14 @@ public class AggregatedLookupService
         if (tvdb != null)
         {
             _logger.LogInformation("Only TVDB matched for {Name}: {Title}", episode.Name, tvdb.Title);
+
+            // Tag-based TVDB matches lack provider IDs — enrich via TMDB search
+            if (string.IsNullOrEmpty(tvdb.TmdbMovieId) && string.IsNullOrEmpty(tvdb.TvdbMovieId))
+            {
+                _logger.LogDebug("TVDB match for {Name} has no provider IDs, enriching via TMDB", episode.Name);
+                tvdb = await _tmdbService.EnrichWithTmdbAsync(tvdb, cancellationToken).ConfigureAwait(false);
+            }
+
             return tvdb;
         }
 

@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "1.0.2.0",
+        "changelog": "Fix missed movie detection for TVDB specials tagged as movies via Special Category when linkedMovie is not set. Enrich tag-based matches with TMDB metadata. Fix TMDB lookup skipping episodes without their own TMDB provider ID.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/AdamHarrison99/jellyfin-plugin-specialtomovie/releases/download/v1.0.2/specialtomovie-v1.0.2.zip",
+        "checksum": "33968054ba090475fc8277b0d2c8b74d",
+        "timestamp": "2026-05-20T00:00:00Z"
+      },
+      {
         "version": "1.0.1.0",
         "changelog": "Fix watch status not syncing for existing paired items during full scan. TV special watch state now always takes priority unless only the movie has progress.",
         "targetAbi": "10.11.0.0",

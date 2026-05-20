@@ -82,14 +82,56 @@ public class TvdbLookupService : IMetadataLookupService, IDisposable
         }
 
         var episodeData = JsonSerializer.Deserialize<TvdbResponse<TvdbEpisodeExtended>>(response, JsonOptions);
-        var linkedMovieId = episodeData?.Data?.LinkedMovie;
-        if (linkedMovieId == null)
+        var episode = episodeData?.Data;
+        if (episode == null)
         {
-            _logger.LogDebug("TVDB episode {Id} has no linkedMovie", episodeTvdbId);
             return null;
         }
 
-        return await GetMovieByIdAsync(linkedMovieId.Value, token, cancellationToken).ConfigureAwait(false);
+        if (episode.LinkedMovie != null)
+        {
+            return await GetMovieByIdAsync(episode.LinkedMovie.Value, token, cancellationToken).ConfigureAwait(false);
+        }
+
+        // Fallback: check if the episode is tagged as "Special Category: Movies"
+        var isMovieTag = episode.TagOptions?.Any(t =>
+            string.Equals(t.TagName, "Special Category", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(t.Name, "Movies", StringComparison.OrdinalIgnoreCase)) == true;
+
+        if (!isMovieTag)
+        {
+            _logger.LogDebug("TVDB episode {Id} has no linkedMovie and no movie tag", episodeTvdbId);
+            return null;
+        }
+
+        _logger.LogInformation(
+            "TVDB episode {Id} has Special Category 'Movies' tag, using episode metadata as movie match",
+            episodeTvdbId);
+
+        int? year = null;
+        if (!string.IsNullOrEmpty(episode.Year) &&
+            int.TryParse(episode.Year, NumberStyles.Integer, CultureInfo.InvariantCulture, out var y))
+        {
+            year = y;
+        }
+
+        var imdbId = episode.RemoteIds?
+            .FirstOrDefault(r => string.Equals(r.SourceName, "IMDB", StringComparison.OrdinalIgnoreCase))
+            ?.Id;
+
+        var title = episode.Name ?? string.Empty;
+        var translatedTitle = await GetEpisodeTranslatedTitleAsync(episodeTvdbId, token, cancellationToken).ConfigureAwait(false);
+        if (!string.IsNullOrEmpty(translatedTitle))
+        {
+            title = translatedTitle;
+        }
+
+        return new MovieMatch
+        {
+            Title = title,
+            Year = year,
+            ImdbId = imdbId
+        };
     }
 
     private async Task<MovieMatch?> GetMovieByIdAsync(long movieId, string token, CancellationToken cancellationToken)
@@ -142,6 +184,37 @@ public class TvdbLookupService : IMetadataLookupService, IDisposable
             TvdbMovieSlug = movie.Slug,
             ImdbId = imdbId
         };
+    }
+
+    private async Task<string?> GetEpisodeTranslatedTitleAsync(string episodeId, string token, CancellationToken cancellationToken)
+    {
+        var lang = GetTvdbLanguageCode();
+        var url = $"{BaseUrl}/episodes/{episodeId}/translations/{lang}";
+        var response = await SendWithRetryAsync(url, token, cancellationToken).ConfigureAwait(false);
+        if (response != null)
+        {
+            var translationData = JsonSerializer.Deserialize<TvdbResponse<TvdbTranslation>>(response, JsonOptions);
+            if (!string.IsNullOrEmpty(translationData?.Data?.Name))
+            {
+                return translationData.Data.Name;
+            }
+        }
+
+        if (!string.Equals(lang, "eng", StringComparison.Ordinal))
+        {
+            var engUrl = $"{BaseUrl}/episodes/{episodeId}/translations/eng";
+            var engResponse = await SendWithRetryAsync(engUrl, token, cancellationToken).ConfigureAwait(false);
+            if (engResponse != null)
+            {
+                var engData = JsonSerializer.Deserialize<TvdbResponse<TvdbTranslation>>(engResponse, JsonOptions);
+                if (!string.IsNullOrEmpty(engData?.Data?.Name))
+                {
+                    return engData.Data.Name;
+                }
+            }
+        }
+
+        return null;
     }
 
     private async Task<string?> GetTranslatedTitleAsync(long movieId, string token, CancellationToken cancellationToken)
@@ -324,6 +397,27 @@ public class TvdbLookupService : IMetadataLookupService, IDisposable
 
         [JsonPropertyName("linkedMovie")]
         public long? LinkedMovie { get; set; }
+
+        [JsonPropertyName("name")]
+        public string? Name { get; set; }
+
+        [JsonPropertyName("year")]
+        public string? Year { get; set; }
+
+        [JsonPropertyName("remoteIds")]
+        public List<TvdbRemoteId>? RemoteIds { get; set; }
+
+        [JsonPropertyName("tagOptions")]
+        public List<TvdbTagOption>? TagOptions { get; set; }
+    }
+
+    private sealed class TvdbTagOption
+    {
+        [JsonPropertyName("tagName")]
+        public string? TagName { get; set; }
+
+        [JsonPropertyName("name")]
+        public string? Name { get; set; }
     }
 
     private sealed class TvdbMovie
