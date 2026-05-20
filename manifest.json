@@ -1,0 +1,20 @@
+[
+  {
+    "guid": "a1b2c3d4-5678-9abc-def0-123456789abc",
+    "name": "SpecialToMovie",
+    "description": "Automatically detects TV specials that are also standalone movies, creates hard links in your movie library, and syncs watch status bidirectionally.",
+    "overview": "Detects TV specials that are also movies, creates hard links, and syncs watch status.",
+    "owner": "AdamHarrison99",
+    "category": "General",
+    "versions": [
+      {
+        "version": "1.0.0.0",
+        "changelog": "Initial release",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/AdamHarrison99/jellyfin-plugin-specialtomovie",
+        "checksum": "7a28d4c216ae87d17dc425fc29af9fe4",
+        "timestamp": "2026-05-20T00:00:00Z"
+      }
+    ]
+  }
+]

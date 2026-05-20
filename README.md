@@ -39,7 +39,12 @@ Manual hard links solve the file deduplication problem, but **watch status still
 ### From Plugin Repository (Recommended)
 
 1. Open Jellyfin Dashboard → **Plugins** → **Repositories**
-2. Add the plugin repository URL *(coming soon)*
+2. Add a new repository with the URL:
+
+   ```text
+   https://raw.githubusercontent.com/AdamHarrison99/jellyfin-plugin-specialtomovie/master/manifest.json
+   ```
+
 3. Go to **Catalog**, find **SpecialToMovie**, and click **Install**
 4. Restart Jellyfin
 
