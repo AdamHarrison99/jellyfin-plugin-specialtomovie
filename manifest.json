@@ -1,12 +1,20 @@
 [
   {
     "guid": "a1b2c3d4-5678-9abc-def0-123456789abc",
-    "name": "SpecialToMovie",
+    "name": "Special To Movie",
     "description": "Automatically detects TV specials that are also standalone movies, creates hard links in your movie library, and syncs watch status bidirectionally.",
     "overview": "Detects TV specials that are also movies, creates hard links, and syncs watch status.",
     "owner": "AdamHarrison99",
     "category": "General",
     "versions": [
+      {
+        "version": "1.0.4.0",
+        "changelog": "Fix hard link failure on long file paths (Win32 MAX_PATH limit). Rename plugin display name to Special To Movie.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/AdamHarrison99/jellyfin-plugin-specialtomovie/releases/download/v1.0.4/specialtomovie-v1.0.4.zip",
+        "checksum": "6929b27fb2c4486c8263f6f495e9413a",
+        "timestamp": "2026-05-20T00:00:00Z"
+      },
       {
         "version": "1.0.3.0",
         "changelog": "Use TMDB alternative titles when no localized title exists to avoid non-English folder names. Add Source column and filter to Linked Pairs table showing plugin-created vs pre-existing movies.",

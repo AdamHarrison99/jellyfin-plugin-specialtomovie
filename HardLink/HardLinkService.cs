@@ -32,7 +32,9 @@ public partial class HardLinkService : IHardLinkService
 
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
-                if (!CreateHardLinkW(linkPath, sourcePath, IntPtr.Zero))
+                var extSource = ToExtendedLengthPath(sourcePath);
+                var extLink = ToExtendedLengthPath(linkPath);
+                if (!CreateHardLinkW(extLink, extSource, IntPtr.Zero))
                 {
                     var error = Marshal.GetLastWin32Error();
                     _logger.LogError("CreateHardLink failed with Win32 error {Error}: {Source} -> {Link}", error, sourcePath, linkPath);
@@ -246,6 +248,17 @@ public partial class HardLinkService : IHardLinkService
         {
             _logger.LogError(ex, "Failed to delete movie folder: {Path}", resolvedFolder);
         }
+    }
+
+    private static string ToExtendedLengthPath(string path)
+    {
+        if (path.StartsWith(@"\\?\", StringComparison.Ordinal))
+        {
+            return path;
+        }
+
+        var full = Path.GetFullPath(path);
+        return @"\\?\" + full;
     }
 
     private static readonly string[] ReservedWindowsNames =

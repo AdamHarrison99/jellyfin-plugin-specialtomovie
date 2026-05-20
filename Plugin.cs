@@ -23,7 +23,7 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
 
     public static Plugin? Instance { get; private set; }
 
-    public override string Name => "SpecialToMovie";
+    public override string Name => "Special To Movie";
 
     public override Guid Id => PluginId;
 
@@ -38,7 +38,7 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
             EnableInMainMenu = true,
             MenuSection = "plugins",
             MenuIcon = "link",
-            DisplayName = "SpecialToMovie"
+            DisplayName = "Special To Movie"
         };
     }
 }
