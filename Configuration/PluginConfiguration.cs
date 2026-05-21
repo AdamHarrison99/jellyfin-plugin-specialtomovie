@@ -35,6 +35,8 @@ public class PluginConfiguration : BasePluginConfiguration
     public bool AutoDeleteOnRemoval { get; set; } = false;
 
     public bool TwoWayDeletion { get; set; } = false;
+
+    public int NotFoundCacheDays { get; set; } = 7;
 }
 
 /// <summary>

@@ -2,6 +2,12 @@
 <html>
 <head>
     <title>Special To Movie</title>
+    <style>
+        #pairsTable td, #pairsTable th {
+            overflow-wrap: break-word;
+            word-break: break-word;
+        }
+    </style>
 </head>
 <body>
     <div id="SpecialToMovieConfigPage" data-role="page" class="page type-interior pluginConfigurationPage"
@@ -46,6 +52,15 @@
                                 <input id="chkDualConfirmation" type="checkbox" is="emby-checkbox" />
                                 <span>Require both TMDB and TVDB to agree before linking</span>
                             </label>
+                        </div>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel inputLabelUnfocused" for="txtNotFoundCacheDays">API 404 cache duration (days)</label>
+                            <input id="txtNotFoundCacheDays" type="number" min="1" max="365" is="emby-input" />
+                            <div class="fieldDescription">
+                                How long to remember API endpoints that returned "not found" before retrying.
+                                Prevents repeated calls for episodes that don't exist on TMDB/TVDB.
+                            </div>
                         </div>
 
                     </div>
@@ -223,23 +238,25 @@
                                 <button id="btnPairsNext" is="emby-button" type="button" class="raised" disabled>Next</button>
                             </div>
                         </div>
-                        <table id="pairsTable" class="tblSortable" style="width:100%;border-collapse:collapse;">
-                            <thead>
-                                <tr>
-                                    <th style="text-align:left;padding:8px;">Episode</th>
-                                    <th style="text-align:left;padding:8px;">Movie</th>
-                                    <th style="text-align:left;padding:8px;">Library</th>
-                                    <th style="text-align:left;padding:8px;">IDs</th>
-                                    <th style="text-align:left;padding:8px;">Source</th>
-                                    <th style="text-align:left;padding:8px;">Status</th>
-                                    <th style="text-align:left;padding:8px;">Created</th>
-                                    <th style="text-align:left;padding:8px;"></th>
-                                </tr>
-                            </thead>
-                            <tbody id="pairsTableBody">
-                                <tr><td colspan="8" style="padding:8px;color:#888;">No linked pairs yet.</td></tr>
-                            </tbody>
-                        </table>
+                        <div style="overflow-x:auto;max-width:100%;">
+                            <table id="pairsTable" class="tblSortable" style="width:100%;border-collapse:collapse;table-layout:fixed;">
+                                <thead>
+                                    <tr>
+                                        <th style="text-align:left;padding:8px;width:25%;">Episode</th>
+                                        <th style="text-align:left;padding:8px;width:20%;">Movie</th>
+                                        <th style="text-align:left;padding:8px;width:12%;">Library</th>
+                                        <th style="text-align:left;padding:8px;width:10%;">IDs</th>
+                                        <th style="text-align:left;padding:8px;width:8%;">Source</th>
+                                        <th style="text-align:left;padding:8px;width:8%;">Status</th>
+                                        <th style="text-align:left;padding:8px;width:9%;">Created</th>
+                                        <th style="text-align:left;padding:8px;width:8%;"></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="pairsTableBody">
+                                    <tr><td colspan="8" style="padding:8px;color:#888;">No linked pairs yet.</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
 
                 </form>
@@ -265,6 +282,7 @@
                         page.querySelector('#chkTwoWayDeletion').checked = config.TwoWayDeletion;
                         page.querySelector('#txtTmdbApiKey').value = config.TmdbApiKey || '';
                         page.querySelector('#txtTvdbApiKey').value = config.TvdbApiKey || '';
+                        page.querySelector('#txtNotFoundCacheDays').value = config.NotFoundCacheDays || 7;
 
                         SpecialToMovieConfig.updateDryRunBanner(config.DryRunMode);
                         SpecialToMovieConfig.updateTwoWayState(config.AutoDeleteOnRemoval);
@@ -291,6 +309,7 @@
                         config.TwoWayDeletion = page.querySelector('#chkTwoWayDeletion').checked;
                         config.TmdbApiKey = page.querySelector('#txtTmdbApiKey').value.trim();
                         config.TvdbApiKey = page.querySelector('#txtTvdbApiKey').value.trim();
+                        config.NotFoundCacheDays = parseInt(page.querySelector('#txtNotFoundCacheDays').value, 10) || 7;
 
                         config.LibraryMappings = SpecialToMovieConfig.collectLibraryMappings();
                         var newForceLinks = SpecialToMovieConfig.collectForceLinks();

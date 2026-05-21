@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
@@ -29,6 +30,7 @@ public class TvdbLookupService : IMetadataLookupService, IDisposable
     private readonly ILogger<TvdbLookupService> _logger;
     private readonly SemaphoreSlim _rateLimiter = new(5, 5);
     private readonly SemaphoreSlim _authLock = new(1, 1);
+    private readonly ConcurrentDictionary<string, long> _notFoundCache = new();
 
     private volatile string? _bearerToken;
     private long _tokenExpiryTicks;
@@ -320,6 +322,14 @@ public class TvdbLookupService : IMetadataLookupService, IDisposable
 
     private async Task<string?> SendWithRetryAsync(string url, string token, CancellationToken cancellationToken)
     {
+        var cacheDays = Math.Max(1, Plugin.Instance?.Configuration.NotFoundCacheDays ?? 7);
+        if (_notFoundCache.TryGetValue(url, out var cachedTicks) &&
+            (DateTime.UtcNow.Ticks - cachedTicks) < TimeSpan.FromDays(cacheDays).Ticks)
+        {
+            _logger.LogDebug("TVDB cache hit (previous 404): {Url}", url);
+            return null;
+        }
+
         await _rateLimiter.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -350,6 +360,13 @@ public class TvdbLookupService : IMetadataLookupService, IDisposable
                 {
                     _logger.LogWarning("TVDB token expired, clearing for re-auth");
                     _bearerToken = null;
+                    return null;
+                }
+
+                if (response.StatusCode == HttpStatusCode.NotFound)
+                {
+                    _notFoundCache[url] = DateTime.UtcNow.Ticks;
+                    _logger.LogDebug("TVDB 404 cached: {Url}", url);
                     return null;
                 }
 

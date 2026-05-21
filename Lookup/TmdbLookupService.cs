@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -24,6 +25,7 @@ public class TmdbLookupService : IMetadataLookupService, IDisposable
     private readonly IServerConfigurationManager _configManager;
     private readonly ILogger<TmdbLookupService> _logger;
     private readonly SemaphoreSlim _rateLimiter = new(30, 30);
+    private readonly ConcurrentDictionary<string, long> _notFoundCache = new();
 
     public TmdbLookupService(IHttpClientFactory httpClientFactory, IServerConfigurationManager configManager, ILogger<TmdbLookupService> logger)
     {
@@ -266,6 +268,15 @@ public class TmdbLookupService : IMetadataLookupService, IDisposable
 
     private async Task<string?> SendWithRetryAsync(string url, CancellationToken cancellationToken)
     {
+        var cacheKey = StripApiKey(url);
+        var cacheDays = Math.Max(1, Plugin.Instance?.Configuration.NotFoundCacheDays ?? 7);
+        if (_notFoundCache.TryGetValue(cacheKey, out var cachedTicks) &&
+            (DateTime.UtcNow.Ticks - cachedTicks) < TimeSpan.FromDays(cacheDays).Ticks)
+        {
+            _logger.LogDebug("TMDB cache hit (previous 404): {Path}", cacheKey);
+            return null;
+        }
+
         await _rateLimiter.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -291,9 +302,16 @@ public class TmdbLookupService : IMetadataLookupService, IDisposable
                     continue;
                 }
 
+                if (response.StatusCode == HttpStatusCode.NotFound)
+                {
+                    _notFoundCache[cacheKey] = DateTime.UtcNow.Ticks;
+                    _logger.LogDebug("TMDB 404 cached: {Path}", cacheKey);
+                    return null;
+                }
+
                 if (!response.IsSuccessStatusCode)
                 {
-                    _logger.LogWarning("TMDB request failed with status {Status}: {Path}", response.StatusCode, StripApiKey(url));
+                    _logger.LogWarning("TMDB request failed with status {Status}: {Path}", response.StatusCode, cacheKey);
                     return null;
                 }
 
