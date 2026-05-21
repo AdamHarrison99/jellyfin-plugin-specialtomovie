@@ -18,6 +18,8 @@ namespace Jellyfin.Plugin.SpecialToMovie.Api;
 [Authorize(Policy = Policies.RequiresElevation)]
 public class SpecialToMovieController : ControllerBase
 {
+    private static int _scanRunning;
+
     private readonly IPairStore _pairStore;
     private readonly ILibraryManager _libraryManager;
     private readonly SpecialDetectionService _detectionService;
@@ -72,11 +74,13 @@ public class SpecialToMovieController : ControllerBase
 
         foreach (var pair in pairs)
         {
-            if (!pair.IsExistingMovie)
+            if (pair.IsExistingMovie)
             {
-                DeleteItemWithFiles(pair.MovieItemId);
-                removed++;
+                continue;
             }
+
+            DeleteItemWithFiles(pair.MovieItemId);
+            removed++;
 
             pair.Status = PairStatus.DryRun;
             pair.HardLinkPath = null;
@@ -94,8 +98,14 @@ public class SpecialToMovieController : ControllerBase
 
     [HttpPost("RunFullScan")]
     [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     public ActionResult RunFullScan()
     {
+        if (Interlocked.CompareExchange(ref _scanRunning, 1, 0) != 0)
+        {
+            return Conflict(new { Status = "AlreadyRunning", Message = "A full scan is already in progress" });
+        }
+
         _logger.LogInformation("Full scan triggered via API");
         _ = Task.Run(async () =>
         {
@@ -107,6 +117,10 @@ public class SpecialToMovieController : ControllerBase
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Full scan failed");
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _scanRunning, 0);
             }
         });
 
@@ -185,13 +199,7 @@ public class SpecialToMovieController : ControllerBase
     [ProducesResponseType(StatusCodes.Status200OK)]
     public ActionResult ClearDatabase()
     {
-        var pairs = _pairStore.GetAll();
-        var count = pairs.Count;
-
-        foreach (var pair in pairs)
-        {
-            _pairStore.Remove(pair.Id);
-        }
+        var count = _pairStore.Clear();
 
         _logger.LogInformation("Database cleared: removed {Count} pairs", count);
         return Ok(new { Removed = count });

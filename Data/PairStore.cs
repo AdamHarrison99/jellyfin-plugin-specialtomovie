@@ -22,6 +22,8 @@ public interface IPairStore
     void Upsert(LinkedPair pair);
 
     void Remove(Guid pairId);
+
+    int Clear();
 }
 
 public class PairStore : IPairStore
@@ -148,6 +150,21 @@ public class PairStore : IPairStore
             {
                 Save();
             }
+        }
+    }
+
+    public int Clear()
+    {
+        lock (_lock)
+        {
+            var count = _pairs.Count;
+            if (count > 0)
+            {
+                _pairs.Clear();
+                Save();
+            }
+
+            return count;
         }
     }
 

@@ -315,13 +315,21 @@ public class TmdbLookupService : IMetadataLookupService, IDisposable
                     return null;
                 }
 
-                if (response.Content.Headers.ContentLength > 1_000_000)
+                var contentLength = response.Content.Headers.ContentLength;
+                if (contentLength.HasValue && contentLength.Value > 1_000_000)
                 {
                     _logger.LogWarning("TMDB response exceeded 1MB size limit");
                     return null;
                 }
 
-                return await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+                var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+                if (body.Length > 1_000_000)
+                {
+                    _logger.LogWarning("TMDB response body exceeded 1MB size limit");
+                    return null;
+                }
+
+                return body;
             }
 
             return null;

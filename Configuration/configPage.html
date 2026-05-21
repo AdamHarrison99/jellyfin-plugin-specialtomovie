@@ -189,8 +189,8 @@
                             </button>
                         </div>
                         <div class="fieldDescription" style="margin-top:8px;">
-                            <strong>Remove All Hard Links</strong> deletes all plugin-created folders and transitions
-                            pairs back to DryRun status. Original episode files are not affected.
+                            <strong>Remove All Hard Links</strong> — Deletes all plugin-created folders
+                            (pre-existing movies &amp; links are not affected). Episode files are not affected.
                         </div>
                         <div class="fieldDescription">
                             <strong>Clear Database</strong> permanently removes all pair records. Match data,
@@ -974,9 +974,10 @@
 
             document.querySelector('#btnRemoveAll')
                 .addEventListener('click', function () {
-                    var msg = 'This will delete all hard links created by this plugin and transition pairs back to DryRun status. ' +
-                              'Your original TV episode files will NOT be affected. The linked movie entries will disappear ' +
-                              'from your movie libraries on the next library scan. This cannot be undone.';
+                    var msg = 'This will delete all plugin-created hard link folders. ' +
+                              'Pre-existing movie links and your original TV episode files will NOT be affected. ' +
+                              'The linked movie entries will disappear from your movie libraries on the next library scan. ' +
+                              'This cannot be undone.';
                     if (confirm(msg)) {
                         if (!confirm('Are you sure? This will delete files from disk.')) {
                             return;
