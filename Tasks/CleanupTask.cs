@@ -105,10 +105,9 @@ public class CleanupTask : IScheduledTask
         {
             _logger.LogInformation("Episode {Id} no longer exists, removing pair {PairId}", pair.EpisodeItemId, pair.Id);
 
-            if (!dryRunMode && !pair.IsExistingMovie && !string.IsNullOrEmpty(pair.HardLinkPath))
+            if (!dryRunMode && !pair.IsExistingMovie)
             {
-                _hardLinkService.DeleteMovieFolder(pair.HardLinkPath);
-                RemoveMovieFromLibrary(pair.MovieItemId);
+                DeleteItemWithFiles(pair.MovieItemId);
             }
 
             _pairStore.Remove(pair.Id);
@@ -189,14 +188,14 @@ public class CleanupTask : IScheduledTask
         return movie;
     }
 
-    private void RemoveMovieFromLibrary(Guid? movieItemId)
+    private void DeleteItemWithFiles(Guid? itemId)
     {
-        if (movieItemId == null || movieItemId == Guid.Empty)
+        if (itemId == null || itemId == Guid.Empty)
         {
             return;
         }
 
-        var item = _libraryManager.GetItemById(movieItemId.Value);
+        var item = _libraryManager.GetItemById(itemId.Value);
         if (item == null)
         {
             return;
@@ -204,12 +203,12 @@ public class CleanupTask : IScheduledTask
 
         try
         {
-            _libraryManager.DeleteItem(item, new DeleteOptions { DeleteFileLocation = false });
-            _logger.LogInformation("Removed movie {Name} from Jellyfin library", item.Name);
+            _libraryManager.DeleteItem(item, new DeleteOptions { DeleteFileLocation = true });
+            _logger.LogInformation("Deleted {Name} with files via Jellyfin", item.Name);
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to remove movie {Id} from Jellyfin library", movieItemId);
+            _logger.LogWarning(ex, "Failed to delete item {Id} via Jellyfin", itemId);
         }
     }
 }

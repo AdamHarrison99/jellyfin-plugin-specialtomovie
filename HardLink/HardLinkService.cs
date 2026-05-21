@@ -62,27 +62,6 @@ public partial class HardLinkService : IHardLinkService
         }
     }
 
-    public bool Delete(string linkPath)
-    {
-        try
-        {
-            if (!File.Exists(linkPath))
-            {
-                _logger.LogDebug("Hard link already gone: {Path}", linkPath);
-                return true;
-            }
-
-            File.Delete(linkPath);
-            _logger.LogInformation("Deleted hard link: {Path}", linkPath);
-            return true;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to delete hard link: {Path}", linkPath);
-            return false;
-        }
-    }
-
     public bool Exists(string linkPath)
     {
         return File.Exists(linkPath);
@@ -200,54 +179,6 @@ public partial class HardLinkService : IHardLinkService
         writer.WriteEndDocument();
 
         _logger.LogInformation("Wrote NFO metadata: {Path}", nfoPath);
-    }
-
-    public void DeleteMovieFolder(string hardLinkPath)
-    {
-        var folderPath = Path.GetDirectoryName(hardLinkPath);
-        if (string.IsNullOrEmpty(folderPath))
-        {
-            _logger.LogWarning("Cannot determine folder for hard link: {Path}", hardLinkPath);
-            return;
-        }
-
-        // Resolve to absolute path to defeat symlink/traversal tricks
-        var resolvedFolder = Path.GetFullPath(folderPath);
-
-        var folderName = Path.GetFileName(resolvedFolder);
-        if (string.IsNullOrEmpty(folderName) || !folderName.Contains(PluginFolderTag, StringComparison.Ordinal))
-        {
-            _logger.LogWarning(
-                "Refusing to delete folder not tagged with {Tag}: {Path}",
-                PluginFolderTag,
-                resolvedFolder);
-            return;
-        }
-
-        // Verify the resolved folder is still under its expected parent (the library root)
-        var parentDir = Path.GetDirectoryName(resolvedFolder);
-        if (string.IsNullOrEmpty(parentDir) ||
-            !resolvedFolder.StartsWith(Path.GetFullPath(parentDir), StringComparison.OrdinalIgnoreCase))
-        {
-            _logger.LogWarning("Resolved folder escapes expected parent: {Path}", resolvedFolder);
-            return;
-        }
-
-        if (!Directory.Exists(resolvedFolder))
-        {
-            _logger.LogDebug("Movie folder already gone: {Path}", resolvedFolder);
-            return;
-        }
-
-        try
-        {
-            Directory.Delete(resolvedFolder, recursive: true);
-            _logger.LogInformation("Deleted movie folder: {Path}", resolvedFolder);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to delete movie folder: {Path}", resolvedFolder);
-        }
     }
 
     private static string ToExtendedLengthPath(string path)

@@ -39,7 +39,12 @@ public class SpecialDetectionService
 
     public async Task ProcessEpisodeAsync(Episode episode, CancellationToken cancellationToken = default)
     {
-        await ProcessEpisodeAsync(episode, null, null, null, cancellationToken).ConfigureAwait(false);
+        var movies = _libraryManager.GetItemList(new InternalItemsQuery
+        {
+            IncludeItemTypes = [BaseItemKind.Movie],
+            Recursive = true
+        });
+        await ProcessEpisodeAsync(episode, null, movies, null, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task ProcessEpisodeAsync(Episode episode, ConfigSnapshot? snapshot, IReadOnlyList<BaseItem>? allMovies, IReadOnlyList<VirtualFolderInfo>? virtualFolders, CancellationToken cancellationToken)

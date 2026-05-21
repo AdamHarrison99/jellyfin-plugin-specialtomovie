@@ -2,7 +2,6 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using Jellyfin.Plugin.SpecialToMovie.Data;
-using Jellyfin.Plugin.SpecialToMovie.HardLink;
 using Jellyfin.Plugin.SpecialToMovie.Models;
 using Jellyfin.Plugin.SpecialToMovie.Services;
 using MediaBrowser.Controller.Library;
@@ -20,7 +19,6 @@ namespace Jellyfin.Plugin.SpecialToMovie.Api;
 public class SpecialToMovieController : ControllerBase
 {
     private readonly IPairStore _pairStore;
-    private readonly IHardLinkService _hardLinkService;
     private readonly ILibraryManager _libraryManager;
     private readonly SpecialDetectionService _detectionService;
     private readonly IHttpClientFactory _httpClientFactory;
@@ -28,28 +26,26 @@ public class SpecialToMovieController : ControllerBase
 
     public SpecialToMovieController(
         IPairStore pairStore,
-        IHardLinkService hardLinkService,
         ILibraryManager libraryManager,
         SpecialDetectionService detectionService,
         IHttpClientFactory httpClientFactory,
         ILogger<SpecialToMovieController> logger)
     {
         _pairStore = pairStore;
-        _hardLinkService = hardLinkService;
         _libraryManager = libraryManager;
         _detectionService = detectionService;
         _httpClientFactory = httpClientFactory;
         _logger = logger;
     }
 
-    private void RemoveMovieFromLibrary(Guid? movieItemId)
+    private void DeleteItemWithFiles(Guid? itemId)
     {
-        if (movieItemId == null || movieItemId == Guid.Empty)
+        if (itemId == null || itemId == Guid.Empty)
         {
             return;
         }
 
-        var item = _libraryManager.GetItemById(movieItemId.Value);
+        var item = _libraryManager.GetItemById(itemId.Value);
         if (item == null)
         {
             return;
@@ -57,12 +53,12 @@ public class SpecialToMovieController : ControllerBase
 
         try
         {
-            _libraryManager.DeleteItem(item, new DeleteOptions { DeleteFileLocation = false });
-            _logger.LogInformation("Removed movie {Name} from Jellyfin library", item.Name);
+            _libraryManager.DeleteItem(item, new DeleteOptions { DeleteFileLocation = true });
+            _logger.LogInformation("Deleted {Name} with files via Jellyfin", item.Name);
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to remove movie {Id} from Jellyfin library", movieItemId);
+            _logger.LogWarning(ex, "Failed to delete item {Id} via Jellyfin", itemId);
         }
     }
 
@@ -71,16 +67,14 @@ public class SpecialToMovieController : ControllerBase
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public ActionResult RemoveAllLinks()
     {
-
         var pairs = _pairStore.GetAll();
         var removed = 0;
 
         foreach (var pair in pairs)
         {
-            if (!pair.IsExistingMovie && !string.IsNullOrEmpty(pair.HardLinkPath))
+            if (!pair.IsExistingMovie)
             {
-                _hardLinkService.DeleteMovieFolder(pair.HardLinkPath);
-                RemoveMovieFromLibrary(pair.MovieItemId);
+                DeleteItemWithFiles(pair.MovieItemId);
                 removed++;
             }
 
@@ -157,10 +151,9 @@ public class SpecialToMovieController : ControllerBase
 
             foreach (var pair in matching)
             {
-                if (!pair.IsExistingMovie && !string.IsNullOrEmpty(pair.HardLinkPath))
+                if (!pair.IsExistingMovie)
                 {
-                    _hardLinkService.DeleteMovieFolder(pair.HardLinkPath);
-                    RemoveMovieFromLibrary(pair.MovieItemId);
+                    DeleteItemWithFiles(pair.MovieItemId);
                 }
 
                 _pairStore.Remove(pair.Id);
@@ -234,7 +227,8 @@ public class SpecialToMovieController : ControllerBase
         }
         catch (Exception ex)
         {
-            return Ok(new { Success = false, Message = $"Connection failed: {ex.Message}" });
+            _logger.LogWarning(ex, "TMDB connection test failed");
+            return Ok(new { Success = false, Message = "Connection failed" });
         }
     }
 
@@ -269,7 +263,8 @@ public class SpecialToMovieController : ControllerBase
         }
         catch (Exception ex)
         {
-            return Ok(new { Success = false, Message = $"Connection failed: {ex.Message}" });
+            _logger.LogWarning(ex, "TVDB connection test failed");
+            return Ok(new { Success = false, Message = "Connection failed" });
         }
     }
 

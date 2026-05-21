@@ -6,8 +6,6 @@ public interface IHardLinkService
 {
     bool Create(string sourcePath, string linkPath);
 
-    bool Delete(string linkPath);
-
     bool Exists(string linkPath);
 
     bool ValidateSameFilesystem(string path1, string path2);
@@ -17,6 +15,4 @@ public interface IHardLinkService
     string BuildHardLinkPath(string destinationLibraryPath, string movieTitle, int? year, string sourceExtension);
 
     void WriteNfoFile(string movieFolderPath, string movieTitle, int? year, MovieMatch match);
-
-    void DeleteMovieFolder(string hardLinkPath);
 }

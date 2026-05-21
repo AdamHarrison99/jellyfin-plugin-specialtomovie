@@ -57,29 +57,28 @@
                         <div class="checkboxContainer checkboxContainer-withDescription">
                             <label class="emby-checkbox-label">
                                 <input id="chkAutoDelete" type="checkbox" is="emby-checkbox" />
-                                <span>Remove linked files when an item is deleted</span>
+                                <span>Remove linked items when an item is deleted</span>
                             </label>
                             <div class="fieldDescription">
-                                When the TV episode is removed, its linked movie folder is also deleted.
+                                When the TV episode is removed, its linked movie is also deleted via Jellyfin
+                                (including the hard link file, NFO, and any metadata Jellyfin manages).
                             </div>
                         </div>
 
-                        <div class="checkboxContainer checkboxContainer-withDescription">
+                        <div id="twoWayDeletionContainer" class="checkboxContainer checkboxContainer-withDescription">
                             <label class="emby-checkbox-label">
                                 <input id="chkTwoWayDeletion" type="checkbox" is="emby-checkbox" />
-                                <span>Two-way deletion (Experimental)</span>
+                                <span style="color:#d9534f;font-weight:bold;">Two-way deletion (Not recommended)</span>
                             </label>
                             <div class="fieldDescription">
                                 Deleting either item removes both. Without this, only removing the TV episode
                                 removes the linked movie.
                             </div>
-                            <div class="fieldDescription" style="color:#d9534f;margin-top:4px;">
-                                Warning: This is an experimental feature. When a linked movie is deleted,
-                                the original episode file will be permanently removed along with any file
-                                or folder in the same directory whose name starts with the episode's filename.
-                                This includes subtitles, images, NFO, and trickplay data, but will also
-                                remove any other file that happens to share the same name prefix — even if
-                                it is not a Jellyfin companion file. This cannot be undone.
+                            <div class="fieldDescription" style="color:#d9534f;margin-top:4px;font-weight:bold;">
+                                Warning: This will permanently delete your original media files. When a linked
+                                movie is deleted, the original episode and all its associated files (subtitles,
+                                images, NFO, trickplay data) will be permanently removed by Jellyfin.
+                                This cannot be undone.
                             </div>
                         </div>
                     </div>
@@ -847,10 +846,14 @@
                     }
                 });
 
+            var pairsSearchTimeout = null;
             document.getElementById('pairsSearch')
                 .addEventListener('input', function () {
-                    SpecialToMovieConfig.pairsPage = 0;
-                    SpecialToMovieConfig.renderPairsPage();
+                    if (pairsSearchTimeout) clearTimeout(pairsSearchTimeout);
+                    pairsSearchTimeout = setTimeout(function () {
+                        SpecialToMovieConfig.pairsPage = 0;
+                        SpecialToMovieConfig.renderPairsPage();
+                    }, 200);
                 });
 
             document.getElementById('pairsStatusFilter')

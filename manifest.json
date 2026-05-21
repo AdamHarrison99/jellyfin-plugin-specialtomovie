@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "1.0.5.0",
+        "changelog": "Delegate item deletion to Jellyfin instead of manual file operations. Improve two-way deletion UI with clearer warnings. Fix info disclosure in API test endpoints. Add search debounce and movie cache for single-episode processing.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/AdamHarrison99/jellyfin-plugin-specialtomovie/releases/download/v1.0.5/specialtomovie-v1.0.5.zip",
+        "checksum": "cf7616601cf59e81cd7f7a5e4624fe3f",
+        "timestamp": "2026-05-20T00:00:00Z"
+      },
+      {
         "version": "1.0.4.0",
         "changelog": "Fix hard link failure on long file paths (Win32 MAX_PATH limit). Rename plugin display name to Special To Movie.",
         "targetAbi": "10.11.0.0",
