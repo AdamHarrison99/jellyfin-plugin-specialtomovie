@@ -36,7 +36,7 @@ public class PluginConfiguration : BasePluginConfiguration
 
     public bool TwoWayDeletion { get; set; } = false;
 
-    public int NotFoundCacheDays { get; set; } = 7;
+    public int NotFoundCacheDays { get; set; } = 14;
 }
 
 /// <summary>

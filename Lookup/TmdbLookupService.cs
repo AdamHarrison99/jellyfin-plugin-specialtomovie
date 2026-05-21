@@ -269,7 +269,7 @@ public class TmdbLookupService : IMetadataLookupService, IDisposable
     private async Task<string?> SendWithRetryAsync(string url, CancellationToken cancellationToken)
     {
         var cacheKey = StripApiKey(url);
-        var cacheDays = Math.Max(1, Plugin.Instance?.Configuration.NotFoundCacheDays ?? 7);
+        var cacheDays = Math.Max(1, Plugin.Instance?.Configuration.NotFoundCacheDays ?? 14);
         if (_notFoundCache.TryGetValue(cacheKey, out var cachedTicks) &&
             (DateTime.UtcNow.Ticks - cachedTicks) < TimeSpan.FromDays(cacheDays).Ticks)
         {

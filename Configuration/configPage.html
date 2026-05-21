@@ -83,7 +83,7 @@
                         <div id="twoWayDeletionContainer" class="checkboxContainer checkboxContainer-withDescription">
                             <label class="emby-checkbox-label">
                                 <input id="chkTwoWayDeletion" type="checkbox" is="emby-checkbox" />
-                                <span style="color:#d9534f;font-weight:bold;">Two-way deletion (Not recommended)</span>
+                                <span style="font-weight:bold;">Two-way deletion (Not recommended)</span>
                             </label>
                             <div class="fieldDescription">
                                 Deleting either item removes both. Without this, only removing the TV episode
@@ -282,7 +282,7 @@
                         page.querySelector('#chkTwoWayDeletion').checked = config.TwoWayDeletion;
                         page.querySelector('#txtTmdbApiKey').value = config.TmdbApiKey || '';
                         page.querySelector('#txtTvdbApiKey').value = config.TvdbApiKey || '';
-                        page.querySelector('#txtNotFoundCacheDays').value = config.NotFoundCacheDays || 7;
+                        page.querySelector('#txtNotFoundCacheDays').value = config.NotFoundCacheDays || 14;
 
                         SpecialToMovieConfig.updateDryRunBanner(config.DryRunMode);
                         SpecialToMovieConfig.updateTwoWayState(config.AutoDeleteOnRemoval);
@@ -309,7 +309,7 @@
                         config.TwoWayDeletion = page.querySelector('#chkTwoWayDeletion').checked;
                         config.TmdbApiKey = page.querySelector('#txtTmdbApiKey').value.trim();
                         config.TvdbApiKey = page.querySelector('#txtTvdbApiKey').value.trim();
-                        config.NotFoundCacheDays = parseInt(page.querySelector('#txtNotFoundCacheDays').value, 10) || 7;
+                        config.NotFoundCacheDays = parseInt(page.querySelector('#txtNotFoundCacheDays').value, 10) || 14;
 
                         config.LibraryMappings = SpecialToMovieConfig.collectLibraryMappings();
                         var newForceLinks = SpecialToMovieConfig.collectForceLinks();

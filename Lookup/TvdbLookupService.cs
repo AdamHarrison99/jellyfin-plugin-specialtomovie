@@ -322,7 +322,7 @@ public class TvdbLookupService : IMetadataLookupService, IDisposable
 
     private async Task<string?> SendWithRetryAsync(string url, string token, CancellationToken cancellationToken)
     {
-        var cacheDays = Math.Max(1, Plugin.Instance?.Configuration.NotFoundCacheDays ?? 7);
+        var cacheDays = Math.Max(1, Plugin.Instance?.Configuration.NotFoundCacheDays ?? 14);
         if (_notFoundCache.TryGetValue(url, out var cachedTicks) &&
             (DateTime.UtcNow.Ticks - cachedTicks) < TimeSpan.FromDays(cacheDays).Ticks)
         {
