@@ -151,6 +151,14 @@ Hard links remain on disk (they're just regular files). Watch sync stops. You ca
 **Q: Will this interfere with my existing metadata?**
 No. The plugin creates movies in `[JellyfinPlugin-SpecialToMovie]`-tagged folders and writes NFO files with correct provider IDs. Your existing library entries are not modified.
 
+## Known Limitations
+
+### Duplicate entries in Next Up / Continue Watching
+
+Because both the episode and its linked movie are fully independent Jellyfin items with synced playback progress, both may appear in the **Next Up** or **Continue Watching** sections simultaneously. Jellyfin's plugin API does not currently provide a way to filter or modify these built-in API responses, so the plugin cannot suppress the duplicate entry.
+
+See [#1](https://github.com/AdamHarrison99/jellyfin-plugin-specialtomovie/issues/1) for details and potential future approaches.
+
 ---
 
 *This project was built with AI code development tools ([Claude Code](https://www.anthropic.com/claude-code)).*
