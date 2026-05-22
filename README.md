@@ -1,4 +1,4 @@
-# Jellyfin Plugin: SpecialToMovie
+# Jellyfin Plugin: Special To Movie
 
 Automatically detects TV specials (Season 0 episodes) that are also standalone movies, creates hard links in your movie library, and syncs watch status bidirectionally.
 
@@ -94,7 +94,7 @@ Dry run mode is **enabled by default**, so the scan will detect matches without 
 
 **No files are created or modified** while dry run is active. Use the ignore list, force links, and remove button to adjust any incorrect matches before activating.
 
-### 4. Activate
+### 5. Activate
 
 Once you're satisfied with the detected matches, **uncheck "Dry run mode"** and save. The next scan will create hard links for all detected pairs and activate watch sync.
 
