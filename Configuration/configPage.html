@@ -5,6 +5,8 @@
     <style>
         #pairsTable td.wrap-long {
             word-break: break-all;
+            overflow-wrap: anywhere;
+            max-width: 0;
         }
         #pairsTable th[data-sort-key] {
             cursor: pointer;
@@ -142,6 +144,15 @@
                         </button>
                         <span id="tvdbTestResult" style="margin-left:10px;"></span>
 
+                        <div class="inputContainer" style="margin-top:16px;">
+                            <label class="inputLabel inputLabelUnfocused" for="txtNotFoundCacheDays">API 404 cache duration (days)</label>
+                            <input id="txtNotFoundCacheDays" type="number" min="1" max="365" is="emby-input" />
+                            <div class="fieldDescription">
+                                How long to remember API endpoints that returned "not found" before retrying.
+                                Prevents repeated calls for episodes that don't exist on TMDB/TVDB.
+                            </div>
+                        </div>
+
                         <div class="checkboxContainer checkboxContainer-withDescription" style="margin-top:16px;">
                             <label class="emby-checkbox-label">
                                 <input id="chkDualConfirmation" type="checkbox" is="emby-checkbox" />
@@ -149,15 +160,6 @@
                             </label>
                             <div class="fieldDescription">
                                 Improves accuracy by reducing false matches, but movies only listed on a single provider will be skipped.
-                            </div>
-                        </div>
-
-                        <div class="inputContainer" style="margin-top:16px;">
-                            <label class="inputLabel inputLabelUnfocused" for="txtNotFoundCacheDays">API 404 cache duration (days)</label>
-                            <input id="txtNotFoundCacheDays" type="number" min="1" max="365" is="emby-input" />
-                            <div class="fieldDescription">
-                                How long to remember API endpoints that returned "not found" before retrying.
-                                Prevents repeated calls for episodes that don't exist on TMDB/TVDB.
                             </div>
                         </div>
                     </div>

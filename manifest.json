@@ -12,7 +12,7 @@
         "changelog": "UI polish: fix table overflow for long filenames without spaces, scope ellipsis truncation to Episode and Movie columns, rebalance column widths, improve provider settings layout and library mapping filter display.",
         "targetAbi": "10.11.9.0",
         "sourceUrl": "https://github.com/AdamHarrison99/jellyfin-plugin-specialtomovie/releases/download/v1.0.9/specialtomovie-v1.0.9.zip",
-        "checksum": "59140ff3d61b06dfcffd6ba133fad415",
+        "checksum": "dc9208b3b91da087b90f6edbc4653d68",
         "timestamp": "2026-05-22T00:00:00Z"
       },
       {
