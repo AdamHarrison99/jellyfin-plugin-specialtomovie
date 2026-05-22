@@ -3,24 +3,24 @@
 <head>
     <title>Special To Movie</title>
     <style>
-        #pairsTable td {
+        #pairsTable td.truncate {
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
             max-width: 0;
         }
-        #pairsTable td a {
+        #pairsTable td.truncate a {
             display: block;
             overflow: hidden;
             text-overflow: ellipsis;
         }
-        #pairsTable tbody td:hover {
+        #pairsTable tbody td.truncate:hover {
             white-space: normal;
             overflow-wrap: break-word;
             word-break: break-all;
             text-overflow: clip;
         }
-        #pairsTable tbody td:hover a {
+        #pairsTable tbody td.truncate:hover a {
             overflow: visible;
             white-space: normal;
             text-overflow: clip;
@@ -750,6 +750,7 @@
                             var tr = document.createElement('tr');
 
                             var tdEp = document.createElement('td');
+                            tdEp.className = 'truncate';
                             tdEp.style.padding = '8px';
                             var epLabel = '';
                             if (pair.EpisodePath) {
@@ -772,6 +773,7 @@
                             tr.appendChild(tdEp);
 
                             var tdMovie = document.createElement('td');
+                            tdMovie.className = 'truncate';
                             tdMovie.style.padding = '8px';
                             var movieLabel = pair.MovieTitle
                                 ? pair.MovieTitle + (pair.MovieYear ? ' (' + pair.MovieYear + ')' : '')
