@@ -30,38 +30,6 @@
         "sourceUrl": "https://github.com/AdamHarrison99/jellyfin-plugin-specialtomovie/releases/download/v1.0.4/specialtomovie-v1.0.4.zip",
         "checksum": "12be0d68601fbbf0e6834752f6469c53",
         "timestamp": "2026-05-20T00:00:00Z"
-      },
-      {
-        "version": "1.0.3.0",
-        "changelog": "Use TMDB alternative titles when no localized title exists to avoid non-English folder names. Add Source column and filter to Linked Pairs table showing plugin-created vs pre-existing movies.",
-        "targetAbi": "10.11.0.0",
-        "sourceUrl": "https://github.com/AdamHarrison99/jellyfin-plugin-specialtomovie/releases/download/v1.0.3/specialtomovie-v1.0.3.zip",
-        "checksum": "2afb69b35bef0f4174e8c175d76f601e",
-        "timestamp": "2026-05-20T00:00:00Z"
-      },
-      {
-        "version": "1.0.2.0",
-        "changelog": "Fix missed movie detection for TVDB specials tagged as movies via Special Category when linkedMovie is not set. Enrich tag-based matches with TMDB metadata. Fix TMDB lookup skipping episodes without their own TMDB provider ID.",
-        "targetAbi": "10.11.0.0",
-        "sourceUrl": "https://github.com/AdamHarrison99/jellyfin-plugin-specialtomovie/releases/download/v1.0.2/specialtomovie-v1.0.2.zip",
-        "checksum": "33968054ba090475fc8277b0d2c8b74d",
-        "timestamp": "2026-05-20T00:00:00Z"
-      },
-      {
-        "version": "1.0.1.0",
-        "changelog": "Fix watch status not syncing for existing paired items during full scan. TV special watch state now always takes priority unless only the movie has progress.",
-        "targetAbi": "10.11.0.0",
-        "sourceUrl": "https://github.com/AdamHarrison99/jellyfin-plugin-specialtomovie/releases/download/v1.0.1/specialtomovie-v1.0.1.zip",
-        "checksum": "3f9621aa68d56c6b0d6593843ceb34fd",
-        "timestamp": "2026-05-20T00:00:00Z"
-      },
-      {
-        "version": "1.0.0.0",
-        "changelog": "Initial release",
-        "targetAbi": "10.11.0.0",
-        "sourceUrl": "https://github.com/AdamHarrison99/jellyfin-plugin-specialtomovie/releases/download/v1.0.0/specialtomovie-v1.0.0.zip",
-        "checksum": "03558cb8b5215954e602c704438d1da5",
-        "timestamp": "2026-05-20T00:00:00Z"
       }
     ]
   }
