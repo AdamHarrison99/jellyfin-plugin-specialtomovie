@@ -18,7 +18,7 @@ Manual hard links solve the file deduplication problem, but **watch status still
 - **Library mapping** — route specials from specific TV libraries to specific movie libraries
 - **NFO metadata** — writes Kodi-compatible NFO files so Jellyfin identifies linked movies correctly
 - **Force links & ignore list** — manually override or exclude specific episodes
-- **Safe deletion** — only removes files in plugin-managed `[JellyfinPlugin-SpecialToMovie]` folders
+- **Safe deletion** (when enabled) — only removes files in plugin-managed `[JellyfinPlugin-SpecialToMovie]` folders
 - **Automatic cleanup** — validates pairs periodically and fixes orphaned entries
 
 ## Requirements
@@ -84,15 +84,15 @@ Add at least one mapping to tell the plugin where to route detected movies:
 
 Set source and destination to the same library if you use mixed-content libraries.
 
-### 3. Review in Dry Run Mode
+### 3. Run a Full Scan
 
-Dry run mode is **enabled by default**. The plugin will:
-- Scan your Season 0 episodes
-- Look up each one against TMDB/TVDB
-- Log matches it finds
-- Show detected pairs in the config page
+Go to **Dashboard → Scheduled Tasks**, find **SpecialToMovie Full Scan**, and run it manually. This scans all your Season 0 episodes and looks up each one against TMDB/TVDB to find movie matches.
 
-**No files are created or modified** while dry run is active.
+### 4. Review in Dry Run Mode
+
+Dry run mode is **enabled by default**, so the scan will detect matches without creating any files. Go back to the plugin config page to review the detected pairs in the **Linked Pairs** table.
+
+**No files are created or modified** while dry run is active. Use the ignore list, force links, and remove button to adjust any incorrect matches before activating.
 
 ### 4. Activate
 
@@ -143,9 +143,11 @@ Already paired? → Skip
     ↓
 Library mapping exists? → No → Skip
     ↓
+In cache? → Yes → Skip (default 14 days, configurable)
+    ↓
 TMDB + TVDB lookup (parallel)
     ↓
-Match found? → No → Skip
+Match found? → No → Cache 404 → Skip
     ↓
 Movie already in destination library?
     ├── Yes → Pair directly (no hard link needed)
