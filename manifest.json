@@ -10,7 +10,7 @@
       {
         "version": "1.0.8.0",
         "changelog": "Add configurable Primary Metadata Provider (TMDB or TVDB) for conflict resolution. Persist not-found cache to disk across restarts. Batch RemoveForceLinkedPairs writes. Fix NotFoundCache timer race conditions.",
-        "targetAbi": "10.11.0.0",
+        "targetAbi": "10.11.9.0",
         "sourceUrl": "https://github.com/AdamHarrison99/jellyfin-plugin-specialtomovie/releases/download/v1.0.8/specialtomovie-v1.0.8.zip",
         "checksum": "991e2eaf800522da7baae14e6aca80f9",
         "timestamp": "2026-05-22T00:00:00Z"
@@ -18,7 +18,7 @@
       {
         "version": "1.0.7.0",
         "changelog": "New UI features: sortable column headers, Run Cleanup button, auto-refresh pagination, library filter, search debounce. Refactor scan/cleanup to use Jellyfin task scheduler. Batch PairStore writes. Fix FindExistingMovie cross-library matching. Fix CleanupTask ignoring AutoDeleteOnRemoval setting. Fix IUserManager.Users API for Jellyfin 10.11.9.",
-        "targetAbi": "10.11.0.0",
+        "targetAbi": "10.11.9.0",
         "sourceUrl": "https://github.com/AdamHarrison99/jellyfin-plugin-specialtomovie/releases/download/v1.0.7/specialtomovie-v1.0.7.zip",
         "checksum": "d3a252882170e20be5339d0631f3971d",
         "timestamp": "2026-05-22T00:00:00Z"
