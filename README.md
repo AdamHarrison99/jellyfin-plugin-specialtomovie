@@ -65,16 +65,11 @@ Copy `bin/Release/net9.0/Jellyfin.Plugin.SpecialToMovie.dll` to your plugins dir
 
 ## Configuration
 
-After installation, go to **Dashboard → Plugins → SpecialToMovie**.
+After installation, go to **Dashboard → Plugins → SpecialToMovie** (or use the sidebar entry in the dashboard menu).
 
 ### 1. Choose Primary Provider & Enter API Keys
 
-Select your **Primary Metadata Provider** (default: TMDB). When both TMDB and TVDB match a special to different movies, the primary provider's result is used.
-
-- **TMDB API Key** — required when TMDB is primary (default)
-- **TVDB API Key** — required when TVDB is primary
-
-The non-primary provider's key is optional but recommended — using both providers improves match accuracy. Use the **Test Connection** buttons to verify your keys work.
+Pick your **Primary Metadata Provider** (default: TMDB) and enter its API key. Additional provider keys are optional but recommended for better accuracy.
 
 ### 2. Set Up Library Mappings
 

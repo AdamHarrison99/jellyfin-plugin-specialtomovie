@@ -3,27 +3,8 @@
 <head>
     <title>Special To Movie</title>
     <style>
-        #pairsTable td.truncate {
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-            max-width: 0;
-        }
-        #pairsTable td.truncate a {
-            display: block;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-        #pairsTable tbody td.truncate:hover {
-            white-space: normal;
-            overflow-wrap: break-word;
+        #pairsTable td.wrap-long {
             word-break: break-all;
-            text-overflow: clip;
-        }
-        #pairsTable tbody td.truncate:hover a {
-            overflow: visible;
-            white-space: normal;
-            text-overflow: clip;
         }
         #pairsTable th[data-sort-key] {
             cursor: pointer;
@@ -79,21 +60,8 @@
                                 <input id="chkAutoDetect" type="checkbox" is="emby-checkbox" />
                                 <span>Enable automatic detection on library scan events</span>
                             </label>
-                        </div>
-
-                        <div class="checkboxContainer checkboxContainer-withDescription">
-                            <label class="emby-checkbox-label">
-                                <input id="chkDualConfirmation" type="checkbox" is="emby-checkbox" />
-                                <span>Require both TMDB and TVDB to agree before linking</span>
-                            </label>
-                        </div>
-
-                        <div class="inputContainer">
-                            <label class="inputLabel inputLabelUnfocused" for="txtNotFoundCacheDays">API 404 cache duration (days)</label>
-                            <input id="txtNotFoundCacheDays" type="number" min="1" max="365" is="emby-input" />
                             <div class="fieldDescription">
-                                How long to remember API endpoints that returned "not found" before retrying.
-                                Prevents repeated calls for episodes that don't exist on TMDB/TVDB.
+                                Automatically checks new Season 0 episodes for movie matches when they are added to your library. Disable to only detect matches during manual or scheduled full scans.
                             </div>
                         </div>
 
@@ -132,9 +100,9 @@
                         </div>
                     </div>
 
-                    <!-- API Keys -->
+                    <!-- Metadata Provider Settings -->
                     <div class="verticalSection">
-                        <h2 class="sectionTitle">API Keys</h2>
+                        <h2 class="sectionTitle">Metadata Provider Settings</h2>
 
                         <div class="selectContainer" style="margin-bottom:16px;">
                             <label class="inputLabel inputLabelUnfocused" for="selectPrimaryProvider">Primary Metadata Provider</label>
@@ -143,8 +111,8 @@
                                 <option value="Tvdb">TVDB</option>
                             </select>
                             <div class="fieldDescription">
-                                When both providers match a special to different movies, the primary provider's result is used.
-                                An API key is required for the primary provider. The other provider's key is optional but recommended for better match accuracy.
+                                When two or more providers match a special to different movies, the primary provider's result is used.
+                                An API key is required for the primary provider. Additional provider keys are optional but recommended for better match accuracy.
                             </div>
                         </div>
 
@@ -173,6 +141,25 @@
                             Test TVDB Connection
                         </button>
                         <span id="tvdbTestResult" style="margin-left:10px;"></span>
+
+                        <div class="checkboxContainer checkboxContainer-withDescription" style="margin-top:16px;">
+                            <label class="emby-checkbox-label">
+                                <input id="chkDualConfirmation" type="checkbox" is="emby-checkbox" />
+                                <span>Require two or more metadata providers to agree before linking</span>
+                            </label>
+                            <div class="fieldDescription">
+                                Improves accuracy by reducing false matches, but movies only listed on a single provider will be skipped.
+                            </div>
+                        </div>
+
+                        <div class="inputContainer" style="margin-top:16px;">
+                            <label class="inputLabel inputLabelUnfocused" for="txtNotFoundCacheDays">API 404 cache duration (days)</label>
+                            <input id="txtNotFoundCacheDays" type="number" min="1" max="365" is="emby-input" />
+                            <div class="fieldDescription">
+                                How long to remember API endpoints that returned "not found" before retrying.
+                                Prevents repeated calls for episodes that don't exist on TMDB/TVDB.
+                            </div>
+                        </div>
                     </div>
 
                     <!-- Library Mappings -->
@@ -181,6 +168,13 @@
                         <div class="fieldDescription">
                             Route Season 0 episodes from a source TV library to a destination movie library.
                             Set both to the same library for mixed-content libraries.
+                        </div>
+                        <div style="display:flex;gap:10px;align-items:center;">
+                            <span style="flex:1;font-weight:bold;font-size:0.9em;">Source TV Library</span>
+                            <span>&rarr;</span>
+                            <span style="flex:1;font-weight:bold;font-size:0.9em;">Destination Movie Library</span>
+                            <label style="display:flex;align-items:center;gap:4px;visibility:hidden;"><input type="checkbox" /><span>Enabled</span></label>
+                            <button type="button" style="visibility:hidden;">Remove</button>
                         </div>
                         <div id="libraryMappingsContainer"></div>
                         <button id="btnAddMapping" is="emby-button" type="button" class="raised">
@@ -291,12 +285,12 @@
                             <table id="pairsTable" class="tblSortable" style="width:100%;border-collapse:collapse;table-layout:fixed;">
                                 <thead>
                                     <tr>
-                                        <th style="text-align:left;padding:8px;width:20%;" data-sort-key="episode">Episode <span class="sort-arrow"></span></th>
+                                        <th style="text-align:left;padding:8px;width:19%;" data-sort-key="episode">Episode <span class="sort-arrow"></span></th>
                                         <th style="text-align:left;padding:8px;width:17%;" data-sort-key="movie">Movie <span class="sort-arrow"></span></th>
                                         <th style="text-align:left;padding:8px;width:11%;" data-sort-key="library">Library <span class="sort-arrow"></span></th>
-                                        <th style="text-align:left;padding:8px;width:9%;">IDs</th>
-                                        <th style="text-align:left;padding:8px;width:10%;" data-sort-key="source">Source <span class="sort-arrow"></span></th>
-                                        <th style="text-align:left;padding:8px;width:10%;" data-sort-key="status">Status <span class="sort-arrow"></span></th>
+                                        <th style="text-align:left;padding:8px;width:8%;">IDs</th>
+                                        <th style="text-align:left;padding:8px;width:11%;" data-sort-key="source">Source <span class="sort-arrow"></span></th>
+                                        <th style="text-align:left;padding:8px;width:11%;" data-sort-key="status">Status <span class="sort-arrow"></span></th>
                                         <th style="text-align:left;padding:8px;width:12%;" data-sort-key="created">Created <span class="sort-arrow"></span></th>
                                         <th style="text-align:left;padding:8px;width:11%;"></th>
                                     </tr>
@@ -422,7 +416,7 @@
                     row.className = 'mapping-row';
                     row.style.cssText = 'display:flex;gap:10px;align-items:center;margin-bottom:8px;';
 
-                    var srcSelect = SpecialToMovieConfig.buildLibrarySelect('mapping-source', mapping.SourceLibraryId);
+                    var srcSelect = SpecialToMovieConfig.buildLibrarySelect('mapping-source', mapping.SourceLibraryId, ['tvshows']);
                     srcSelect.style.flex = '1';
                     srcSelect.dataset.index = index;
                     row.appendChild(srcSelect);
@@ -431,7 +425,7 @@
                     arrow.innerHTML = '&rarr;';
                     row.appendChild(arrow);
 
-                    var dstSelect = SpecialToMovieConfig.buildLibrarySelect('mapping-dest', mapping.DestinationLibraryId);
+                    var dstSelect = SpecialToMovieConfig.buildLibrarySelect('mapping-dest', mapping.DestinationLibraryId, ['movies']);
                     dstSelect.style.flex = '1';
                     dstSelect.dataset.index = index;
                     row.appendChild(dstSelect);
@@ -459,7 +453,7 @@
                     return row;
                 },
 
-                buildLibrarySelect: function (className, selectedId) {
+                buildLibrarySelect: function (className, selectedId, allowedTypes) {
                     var select = document.createElement('select');
                     select.className = className + ' emby-select';
 
@@ -469,6 +463,12 @@
                     select.appendChild(defaultOpt);
 
                     SpecialToMovieConfig.libraries.forEach(function (lib) {
+                        var type = (lib.CollectionType || '').toLowerCase();
+                        var isMixed = !type;
+                        var matchesFilter = !allowedTypes || isMixed || allowedTypes.indexOf(type) >= 0;
+                        if (!matchesFilter && lib.ItemId !== selectedId) {
+                            return;
+                        }
                         var opt = document.createElement('option');
                         opt.value = lib.ItemId;
                         opt.textContent = lib.Name;
@@ -750,7 +750,7 @@
                             var tr = document.createElement('tr');
 
                             var tdEp = document.createElement('td');
-                            tdEp.className = 'truncate';
+                            tdEp.className = 'wrap-long';
                             tdEp.style.padding = '8px';
                             var epLabel = '';
                             if (pair.EpisodePath) {
@@ -773,7 +773,7 @@
                             tr.appendChild(tdEp);
 
                             var tdMovie = document.createElement('td');
-                            tdMovie.className = 'truncate';
+                            tdMovie.className = 'wrap-long';
                             tdMovie.style.padding = '8px';
                             var movieLabel = pair.MovieTitle
                                 ? pair.MovieTitle + (pair.MovieYear ? ' (' + pair.MovieYear + ')' : '')
