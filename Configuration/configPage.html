@@ -753,7 +753,7 @@
 
                             var tdEp = document.createElement('td');
                             tdEp.className = 'wrap-long';
-                            tdEp.style.padding = '8px';
+                            tdEp.style.cssText = 'padding:8px;word-break:break-all;overflow-wrap:anywhere;max-width:0;';
                             var epLabel = '';
                             if (pair.EpisodePath) {
                                 var parts = pair.EpisodePath.replace(/\\/g, '/').split('/');
@@ -776,7 +776,7 @@
 
                             var tdMovie = document.createElement('td');
                             tdMovie.className = 'wrap-long';
-                            tdMovie.style.padding = '8px';
+                            tdMovie.style.cssText = 'padding:8px;word-break:break-all;overflow-wrap:anywhere;max-width:0;';
                             var movieLabel = pair.MovieTitle
                                 ? pair.MovieTitle + (pair.MovieYear ? ' (' + pair.MovieYear + ')' : '')
                                 : '—';
