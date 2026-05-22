@@ -3,10 +3,17 @@
 <head>
     <title>Special To Movie</title>
     <style>
-        #pairsTable td, #pairsTable th {
+        #pairsTable td {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            max-width: 0;
+        }
+        #pairsTable tbody td:hover {
+            white-space: normal;
             overflow-wrap: break-word;
             word-break: break-all;
-            overflow: hidden;
+            text-overflow: clip;
         }
         #pairsTable th[data-sort-key] {
             cursor: pointer;
@@ -261,14 +268,14 @@
                             <table id="pairsTable" class="tblSortable" style="width:100%;border-collapse:collapse;table-layout:fixed;">
                                 <thead>
                                     <tr>
-                                        <th style="text-align:left;padding:8px;width:25%;" data-sort-key="episode">Episode <span class="sort-arrow"></span></th>
-                                        <th style="text-align:left;padding:8px;width:20%;" data-sort-key="movie">Movie <span class="sort-arrow"></span></th>
-                                        <th style="text-align:left;padding:8px;width:12%;" data-sort-key="library">Library <span class="sort-arrow"></span></th>
-                                        <th style="text-align:left;padding:8px;width:10%;">IDs</th>
+                                        <th style="text-align:left;padding:8px;width:22%;" data-sort-key="episode">Episode <span class="sort-arrow"></span></th>
+                                        <th style="text-align:left;padding:8px;width:18%;" data-sort-key="movie">Movie <span class="sort-arrow"></span></th>
+                                        <th style="text-align:left;padding:8px;width:11%;" data-sort-key="library">Library <span class="sort-arrow"></span></th>
+                                        <th style="text-align:left;padding:8px;width:9%;">IDs</th>
                                         <th style="text-align:left;padding:8px;width:8%;" data-sort-key="source">Source <span class="sort-arrow"></span></th>
                                         <th style="text-align:left;padding:8px;width:8%;" data-sort-key="status">Status <span class="sort-arrow"></span></th>
-                                        <th style="text-align:left;padding:8px;width:9%;" data-sort-key="created">Created <span class="sort-arrow"></span></th>
-                                        <th style="text-align:left;padding:8px;width:8%;"></th>
+                                        <th style="text-align:left;padding:8px;width:12%;" data-sort-key="created">Created <span class="sort-arrow"></span></th>
+                                        <th style="text-align:left;padding:8px;width:12%;"></th>
                                     </tr>
                                 </thead>
                                 <tbody id="pairsTableBody">
@@ -727,15 +734,14 @@
                             } else {
                                 epLabel = pair.EpisodeItemId || '—';
                             }
+                            tdEp.title = pair.EpisodePath || epLabel;
                             if (pair.EpisodeItemId) {
                                 var epLink = document.createElement('a');
                                 epLink.href = '#!/details?id=' + pair.EpisodeItemId;
                                 epLink.textContent = epLabel;
-                                epLink.title = pair.EpisodePath || pair.EpisodeItemId;
                                 tdEp.appendChild(epLink);
                             } else {
                                 tdEp.textContent = epLabel;
-                                tdEp.title = pair.EpisodePath || '';
                             }
                             tr.appendChild(tdEp);
 
@@ -834,7 +840,7 @@
                             var tdCreated = document.createElement('td');
                             tdCreated.style.padding = '8px';
                             tdCreated.textContent = pair.CreatedUtc
-                                ? new Date(pair.CreatedUtc).toLocaleDateString()
+                                ? new Date(pair.CreatedUtc).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' })
                                 : '—';
                             tr.appendChild(tdCreated);
 
@@ -843,7 +849,7 @@
                             var removeBtn = document.createElement('button');
                             removeBtn.type = 'button';
                             removeBtn.textContent = 'Remove';
-                            removeBtn.style.cssText = 'cursor:pointer;color:#d9534f;background:none;border:1px solid #d9534f;padding:2px 8px;border-radius:3px;';
+                            removeBtn.style.cssText = 'cursor:pointer;color:#d9534f;background:none;border:1px solid #d9534f;padding:2px 6px;border-radius:3px;white-space:nowrap;font-size:0.85em;';
                             removeBtn.addEventListener('click', (function (pairId) {
                                 return function () {
                                     if (!confirm('Remove this pair from the database?')) return;
