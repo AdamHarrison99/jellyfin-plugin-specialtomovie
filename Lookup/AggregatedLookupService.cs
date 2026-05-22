@@ -1,3 +1,4 @@
+using Jellyfin.Plugin.SpecialToMovie.Configuration;
 using Jellyfin.Plugin.SpecialToMovie.Models;
 using MediaBrowser.Controller.Entities.TV;
 using Microsoft.Extensions.Logging;
@@ -32,12 +33,25 @@ public class AggregatedLookupService
 
         if (tmdb != null && tvdb != null)
         {
-            _logger.LogInformation(
-                "Both TMDB and TVDB matched for {Name}: TMDB={TmdbTitle}, TVDB={TvdbTitle}",
-                episode.Name, tmdb.Title, tvdb.Title);
+            var primary = Plugin.Instance?.Configuration.PrimaryProvider ?? MetadataProviderType.Tmdb;
 
-            // Prefer TMDB for primary metadata, merge in TVDB movie ID
-            return tmdb with { TvdbMovieId = tvdb.TvdbMovieId, TvdbMovieSlug = tvdb.TvdbMovieSlug };
+            _logger.LogInformation(
+                "Both TMDB and TVDB matched for {Name}: TMDB={TmdbTitle}, TVDB={TvdbTitle}. Primary: {Primary}",
+                episode.Name, tmdb.Title, tvdb.Title, primary);
+
+            return primary switch
+            {
+                MetadataProviderType.Tvdb => tvdb with
+                {
+                    TmdbMovieId = tmdb.TmdbMovieId,
+                    ImdbId = tmdb.ImdbId ?? tvdb.ImdbId
+                },
+                _ => tmdb with
+                {
+                    TvdbMovieId = tvdb.TvdbMovieId,
+                    TvdbMovieSlug = tvdb.TvdbMovieSlug
+                }
+            };
         }
 
         if (tmdb != null)

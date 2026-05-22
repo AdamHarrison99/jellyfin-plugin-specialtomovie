@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -25,13 +24,14 @@ public class TmdbLookupService : IMetadataLookupService, IDisposable
     private readonly IServerConfigurationManager _configManager;
     private readonly ILogger<TmdbLookupService> _logger;
     private readonly SemaphoreSlim _rateLimiter = new(30, 30);
-    private readonly ConcurrentDictionary<string, long> _notFoundCache = new();
+    private readonly NotFoundCache _notFoundCache;
 
-    public TmdbLookupService(IHttpClientFactory httpClientFactory, IServerConfigurationManager configManager, ILogger<TmdbLookupService> logger)
+    public TmdbLookupService(IHttpClientFactory httpClientFactory, IServerConfigurationManager configManager, ILogger<TmdbLookupService> logger, NotFoundCache notFoundCache)
     {
         _httpClientFactory = httpClientFactory;
         _configManager = configManager;
         _logger = logger;
+        _notFoundCache = notFoundCache;
     }
 
     public void Dispose()
@@ -270,8 +270,7 @@ public class TmdbLookupService : IMetadataLookupService, IDisposable
     {
         var cacheKey = StripApiKey(url);
         var cacheDays = Math.Max(1, Plugin.Instance?.Configuration.NotFoundCacheDays ?? 14);
-        if (_notFoundCache.TryGetValue(cacheKey, out var cachedTicks) &&
-            (DateTime.UtcNow.Ticks - cachedTicks) < TimeSpan.FromDays(cacheDays).Ticks)
+        if (_notFoundCache.IsNotFound(cacheKey, cacheDays))
         {
             _logger.LogDebug("TMDB cache hit (previous 404): {Path}", cacheKey);
             return null;
@@ -304,7 +303,7 @@ public class TmdbLookupService : IMetadataLookupService, IDisposable
 
                 if (response.StatusCode == HttpStatusCode.NotFound)
                 {
-                    _notFoundCache[cacheKey] = DateTime.UtcNow.Ticks;
+                    _notFoundCache.Add(cacheKey);
                     _logger.LogDebug("TMDB 404 cached: {Path}", cacheKey);
                     return null;
                 }

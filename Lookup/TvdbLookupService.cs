@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
@@ -30,16 +29,17 @@ public class TvdbLookupService : IMetadataLookupService, IDisposable
     private readonly ILogger<TvdbLookupService> _logger;
     private readonly SemaphoreSlim _rateLimiter = new(5, 5);
     private readonly SemaphoreSlim _authLock = new(1, 1);
-    private readonly ConcurrentDictionary<string, long> _notFoundCache = new();
+    private readonly NotFoundCache _notFoundCache;
 
     private volatile string? _bearerToken;
     private long _tokenExpiryTicks;
 
-    public TvdbLookupService(IHttpClientFactory httpClientFactory, IServerConfigurationManager configManager, ILogger<TvdbLookupService> logger)
+    public TvdbLookupService(IHttpClientFactory httpClientFactory, IServerConfigurationManager configManager, ILogger<TvdbLookupService> logger, NotFoundCache notFoundCache)
     {
         _httpClientFactory = httpClientFactory;
         _configManager = configManager;
         _logger = logger;
+        _notFoundCache = notFoundCache;
     }
 
     public void Dispose()
@@ -323,8 +323,7 @@ public class TvdbLookupService : IMetadataLookupService, IDisposable
     private async Task<string?> SendWithRetryAsync(string url, string token, CancellationToken cancellationToken)
     {
         var cacheDays = Math.Max(1, Plugin.Instance?.Configuration.NotFoundCacheDays ?? 14);
-        if (_notFoundCache.TryGetValue(url, out var cachedTicks) &&
-            (DateTime.UtcNow.Ticks - cachedTicks) < TimeSpan.FromDays(cacheDays).Ticks)
+        if (_notFoundCache.IsNotFound(url, cacheDays))
         {
             _logger.LogDebug("TVDB cache hit (previous 404): {Url}", url);
             return null;
@@ -365,7 +364,7 @@ public class TvdbLookupService : IMetadataLookupService, IDisposable
 
                 if (response.StatusCode == HttpStatusCode.NotFound)
                 {
-                    _notFoundCache[url] = DateTime.UtcNow.Ticks;
+                    _notFoundCache.Add(url);
                     _logger.LogDebug("TVDB 404 cached: {Url}", url);
                     return null;
                 }

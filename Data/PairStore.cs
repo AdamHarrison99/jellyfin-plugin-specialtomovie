@@ -25,6 +25,8 @@ public interface IPairStore
 
     void Remove(Guid pairId);
 
+    void RemoveMany(IEnumerable<Guid> pairIds);
+
     int Clear();
 }
 
@@ -176,6 +178,19 @@ public class PairStore : IPairStore
         lock (_lock)
         {
             var removed = _pairs.RemoveAll(p => p.Id == pairId);
+            if (removed > 0)
+            {
+                Save();
+            }
+        }
+    }
+
+    public void RemoveMany(IEnumerable<Guid> pairIds)
+    {
+        lock (_lock)
+        {
+            var idSet = new HashSet<Guid>(pairIds);
+            var removed = _pairs.RemoveAll(p => idSet.Contains(p.Id));
             if (removed > 0)
             {
                 Save();

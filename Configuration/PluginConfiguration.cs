@@ -1,14 +1,24 @@
 using System;
 using System.Collections.Generic;
+using System.Text.Json.Serialization;
 using MediaBrowser.Model.Plugins;
 
 namespace Jellyfin.Plugin.SpecialToMovie.Configuration;
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum MetadataProviderType
+{
+    Tmdb = 0,
+    Tvdb = 1
+}
 
 /// <summary>
 /// Plugin configuration model.
 /// </summary>
 public class PluginConfiguration : BasePluginConfiguration
 {
+    public MetadataProviderType PrimaryProvider { get; set; } = MetadataProviderType.Tmdb;
+
     public string TmdbApiKey { get; set; } = string.Empty;
 
     public string TvdbApiKey { get; set; } = string.Empty;

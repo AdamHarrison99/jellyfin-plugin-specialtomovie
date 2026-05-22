@@ -129,8 +129,8 @@ public class SpecialToMovieController : ControllerBase
     [ProducesResponseType(StatusCodes.Status200OK)]
     public ActionResult RemoveForceLinkedPairs([FromBody] RemoveForceLinkedPairsRequest request)
     {
-        var removed = 0;
         var allPairs = _pairStore.GetAll();
+        var toRemove = new List<LinkedPair>();
 
         foreach (var key in request.EpisodeKeys)
         {
@@ -151,7 +151,7 @@ public class SpecialToMovieController : ControllerBase
 
                 return string.Equals(key, generatedKey, StringComparison.OrdinalIgnoreCase) ||
                        string.Equals(key, p.EpisodeItemId.ToString(), StringComparison.OrdinalIgnoreCase);
-            }).ToList();
+            });
 
             foreach (var pair in matching)
             {
@@ -160,13 +160,17 @@ public class SpecialToMovieController : ControllerBase
                     DeleteItemWithFiles(pair.MovieItemId);
                 }
 
-                _pairStore.Remove(pair.Id);
-                removed++;
+                toRemove.Add(pair);
                 _logger.LogInformation("Removed pair for deleted force link {Key}: {Title}", key, pair.MovieTitle);
             }
         }
 
-        return Ok(new { Removed = removed });
+        if (toRemove.Count > 0)
+        {
+            _pairStore.RemoveMany(toRemove.Select(p => p.Id));
+        }
+
+        return Ok(new { Removed = toRemove.Count });
     }
 
     [HttpPost("RemovePair")]

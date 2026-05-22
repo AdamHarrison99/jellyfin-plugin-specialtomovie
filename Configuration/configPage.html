@@ -125,6 +125,18 @@
                     <div class="verticalSection">
                         <h2 class="sectionTitle">API Keys</h2>
 
+                        <div class="selectContainer" style="margin-bottom:16px;">
+                            <label class="inputLabel inputLabelUnfocused" for="selectPrimaryProvider">Primary Metadata Provider</label>
+                            <select id="selectPrimaryProvider" is="emby-select">
+                                <option value="Tmdb">TMDB</option>
+                                <option value="Tvdb">TVDB</option>
+                            </select>
+                            <div class="fieldDescription">
+                                When both providers match a special to different movies, the primary provider's result is used.
+                                An API key is required for the primary provider. The other provider's key is optional but recommended for better match accuracy.
+                            </div>
+                        </div>
+
                         <div class="inputContainer">
                             <label class="inputLabel inputLabelUnfocused" for="txtTmdbApiKey">TMDB API Key (v3)</label>
                             <input id="txtTmdbApiKey" type="text" is="emby-input" />
@@ -306,6 +318,8 @@
                         page.querySelector('#chkDualConfirmation').checked = config.RequireDualConfirmation;
                         page.querySelector('#chkAutoDelete').checked = config.AutoDeleteOnRemoval;
                         page.querySelector('#chkTwoWayDeletion').checked = config.TwoWayDeletion;
+                        var pv = config.PrimaryProvider;
+                        page.querySelector('#selectPrimaryProvider').value = (pv === 1 || pv === 'Tvdb') ? 'Tvdb' : 'Tmdb';
                         page.querySelector('#txtTmdbApiKey').value = config.TmdbApiKey || '';
                         page.querySelector('#txtTvdbApiKey').value = config.TvdbApiKey || '';
                         page.querySelector('#txtNotFoundCacheDays').value = config.NotFoundCacheDays || 14;
@@ -333,6 +347,7 @@
                         config.RequireDualConfirmation = page.querySelector('#chkDualConfirmation').checked;
                         config.AutoDeleteOnRemoval = page.querySelector('#chkAutoDelete').checked;
                         config.TwoWayDeletion = page.querySelector('#chkTwoWayDeletion').checked;
+                        config.PrimaryProvider = page.querySelector('#selectPrimaryProvider').value;
                         config.TmdbApiKey = page.querySelector('#txtTmdbApiKey').value.trim();
                         config.TvdbApiKey = page.querySelector('#txtTvdbApiKey').value.trim();
                         config.NotFoundCacheDays = parseInt(page.querySelector('#txtNotFoundCacheDays').value, 10) || 14;
