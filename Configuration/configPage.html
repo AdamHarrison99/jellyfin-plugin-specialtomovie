@@ -9,15 +9,28 @@
             white-space: nowrap;
             max-width: 0;
         }
+        #pairsTable td a {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            display: inline-block;
+            max-width: 100%;
+            vertical-align: bottom;
+        }
         #pairsTable tbody td:hover {
             white-space: normal;
             overflow-wrap: break-word;
             word-break: break-all;
             text-overflow: clip;
         }
+        #pairsTable tbody td:hover a {
+            overflow: visible;
+            white-space: normal;
+            text-overflow: clip;
+        }
         #pairsTable th[data-sort-key] {
             cursor: pointer;
             user-select: none;
+            white-space: nowrap;
         }
         #pairsTable th[data-sort-key]:hover {
             text-decoration: underline;
