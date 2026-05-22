@@ -3,9 +3,10 @@ using System.Text;
 using System.Text.Json;
 using Jellyfin.Plugin.SpecialToMovie.Data;
 using Jellyfin.Plugin.SpecialToMovie.Models;
-using Jellyfin.Plugin.SpecialToMovie.Services;
+using Jellyfin.Plugin.SpecialToMovie.Tasks;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Common.Api;
+using MediaBrowser.Model.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -18,24 +19,22 @@ namespace Jellyfin.Plugin.SpecialToMovie.Api;
 [Authorize(Policy = Policies.RequiresElevation)]
 public class SpecialToMovieController : ControllerBase
 {
-    private static int _scanRunning;
-
     private readonly IPairStore _pairStore;
     private readonly ILibraryManager _libraryManager;
-    private readonly SpecialDetectionService _detectionService;
+    private readonly ITaskManager _taskManager;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<SpecialToMovieController> _logger;
 
     public SpecialToMovieController(
         IPairStore pairStore,
         ILibraryManager libraryManager,
-        SpecialDetectionService detectionService,
+        ITaskManager taskManager,
         IHttpClientFactory httpClientFactory,
         ILogger<SpecialToMovieController> logger)
     {
         _pairStore = pairStore;
         _libraryManager = libraryManager;
-        _detectionService = detectionService;
+        _taskManager = taskManager;
         _httpClientFactory = httpClientFactory;
         _logger = logger;
     }
@@ -70,7 +69,7 @@ public class SpecialToMovieController : ControllerBase
     public ActionResult RemoveAllLinks()
     {
         var pairs = _pairStore.GetAll();
-        var removed = 0;
+        var modified = new List<LinkedPair>();
 
         foreach (var pair in pairs)
         {
@@ -80,50 +79,41 @@ public class SpecialToMovieController : ControllerBase
             }
 
             DeleteItemWithFiles(pair.MovieItemId);
-            removed++;
 
             pair.Status = PairStatus.DryRun;
             pair.HardLinkPath = null;
             pair.MovieItemId = null;
             pair.ErrorMessage = null;
-            _pairStore.Upsert(pair);
+            modified.Add(pair);
+        }
+
+        if (modified.Count > 0)
+        {
+            _pairStore.UpsertMany(modified);
         }
 
         _logger.LogInformation(
             "Removed {Removed} hard links. Original episode files are untouched. Pairs preserved in database.",
-            removed);
+            modified.Count);
 
-        return Ok(new { Removed = removed, TotalPairs = pairs.Count });
+        return Ok(new { Removed = modified.Count, TotalPairs = pairs.Count });
     }
 
     [HttpPost("RunFullScan")]
     [ProducesResponseType(StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status409Conflict)]
     public ActionResult RunFullScan()
     {
-        if (Interlocked.CompareExchange(ref _scanRunning, 1, 0) != 0)
-        {
-            return Conflict(new { Status = "AlreadyRunning", Message = "A full scan is already in progress" });
-        }
-
         _logger.LogInformation("Full scan triggered via API");
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                await _detectionService.RunFullScanAsync(null, CancellationToken.None).ConfigureAwait(false);
-                _logger.LogInformation("Full scan completed (triggered via API)");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Full scan failed");
-            }
-            finally
-            {
-                Interlocked.Exchange(ref _scanRunning, 0);
-            }
-        });
+        _taskManager.QueueScheduledTask<FullScanTask>();
+        return Ok(new { Status = "Started" });
+    }
 
+    [HttpPost("RunCleanup")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public ActionResult RunCleanup()
+    {
+        _logger.LogInformation("Cleanup triggered via API");
+        _taskManager.QueueScheduledTask<CleanupTask>();
         return Ok(new { Status = "Started" });
     }
 

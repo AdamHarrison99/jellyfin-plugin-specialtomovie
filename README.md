@@ -86,7 +86,7 @@ Set source and destination to the same library if you use mixed-content librarie
 
 ### 3. Run a Full Scan
 
-Go to **Dashboard → Scheduled Tasks**, find **SpecialToMovie Full Scan**, and run it manually. This scans all your Season 0 episodes and looks up each one against TMDB/TVDB to find movie matches.
+Click **Run Full Scan** on the plugin config page, or go to **Dashboard → Scheduled Tasks** and run **SpecialToMovie Full Scan** manually. This scans all your Season 0 episodes and looks up each one against TMDB/TVDB to find movie matches.
 
 ### 4. Review in Dry Run Mode
 

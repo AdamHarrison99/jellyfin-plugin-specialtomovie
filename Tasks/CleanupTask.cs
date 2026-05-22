@@ -76,7 +76,7 @@ public class CleanupTask : IScheduledTask
             cancellationToken.ThrowIfCancellationRequested();
 
             var pair = pairs[i];
-            ValidatePair(pair, config.DryRunMode, allEpisodes, moviesByPath);
+            ValidatePair(pair, config.DryRunMode, config.AutoDeleteOnRemoval, allEpisodes, moviesByPath);
 
             progress.Report((double)(i + 1) / total * 100);
         }
@@ -96,7 +96,7 @@ public class CleanupTask : IScheduledTask
         };
     }
 
-    private void ValidatePair(LinkedPair pair, bool dryRunMode, Dictionary<Guid, BaseItem> allEpisodes, Dictionary<string, BaseItem> moviesByPath)
+    private void ValidatePair(LinkedPair pair, bool dryRunMode, bool autoDelete, Dictionary<Guid, BaseItem> allEpisodes, Dictionary<string, BaseItem> moviesByPath)
     {
         allEpisodes.TryGetValue(pair.EpisodeItemId, out var episode);
 
@@ -105,7 +105,7 @@ public class CleanupTask : IScheduledTask
         {
             _logger.LogInformation("Episode {Id} no longer exists, removing pair {PairId}", pair.EpisodeItemId, pair.Id);
 
-            if (!dryRunMode && !pair.IsExistingMovie)
+            if (!dryRunMode && autoDelete && !pair.IsExistingMovie)
             {
                 DeleteItemWithFiles(pair.MovieItemId);
             }

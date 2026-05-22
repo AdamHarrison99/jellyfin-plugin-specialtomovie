@@ -105,7 +105,7 @@ public class SpecialDetectionService
         }
 
         // Check if the movie already exists in the destination library
-        var existingMovie = FindExistingMovie(mapping.DestinationLibraryId, match, allMovies);
+        var existingMovie = FindExistingMovie(mapping.DestinationLibraryId, match, allMovies, virtualFolders);
         if (existingMovie != null)
         {
             _logger.LogInformation(
@@ -358,14 +358,31 @@ public class SpecialDetectionService
         return null;
     }
 
-    private BaseItem? FindExistingMovie(Guid destinationLibraryId, MovieMatch match, IReadOnlyList<BaseItem>? cachedMovies)
+    private BaseItem? FindExistingMovie(Guid destinationLibraryId, MovieMatch match, IReadOnlyList<BaseItem>? cachedMovies, IReadOnlyList<VirtualFolderInfo>? virtualFolders)
     {
-        var movies = cachedMovies ?? _libraryManager.GetItemList(new InternalItemsQuery
+        IEnumerable<BaseItem> movies;
+
+        if (cachedMovies != null && virtualFolders != null)
         {
-            IncludeItemTypes = [BaseItemKind.Movie],
-            ParentId = destinationLibraryId,
-            Recursive = true
-        });
+            var destFolder = virtualFolders.FirstOrDefault(f =>
+                Guid.TryParse(f.ItemId, out var id) && id == destinationLibraryId);
+            var destLocations = destFolder?.Locations ?? [];
+
+            movies = cachedMovies.Where(m =>
+                !string.IsNullOrEmpty(m.Path) &&
+                destLocations.Any(loc =>
+                    !string.IsNullOrEmpty(loc) &&
+                    m.Path.StartsWith(loc, StringComparison.OrdinalIgnoreCase)));
+        }
+        else
+        {
+            movies = _libraryManager.GetItemList(new InternalItemsQuery
+            {
+                IncludeItemTypes = [BaseItemKind.Movie],
+                ParentId = destinationLibraryId,
+                Recursive = true
+            });
+        }
 
         return movies.FirstOrDefault(m =>
             (!string.IsNullOrEmpty(match.TmdbMovieId) &&

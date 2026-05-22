@@ -75,7 +75,7 @@ public class WatchSyncService : IHostedService, IDisposable
             return;
         }
 
-        var users = _userManager.Users;
+        var users = _userManager.GetUsers();
         foreach (var user in users)
         {
             try

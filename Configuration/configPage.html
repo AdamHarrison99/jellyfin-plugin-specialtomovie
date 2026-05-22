@@ -5,7 +5,23 @@
     <style>
         #pairsTable td, #pairsTable th {
             overflow-wrap: break-word;
-            word-break: break-word;
+            word-break: break-all;
+            overflow: hidden;
+        }
+        #pairsTable th[data-sort-key] {
+            cursor: pointer;
+            user-select: none;
+        }
+        #pairsTable th[data-sort-key]:hover {
+            text-decoration: underline;
+        }
+        #pairsTable th .sort-arrow {
+            font-size: 0.7em;
+            margin-left: 4px;
+            opacity: 0.5;
+        }
+        #pairsTable th.sort-active .sort-arrow {
+            opacity: 1;
         }
     </style>
 </head>
@@ -170,9 +186,14 @@
                     <!-- Actions -->
                     <div class="verticalSection">
                         <h2 class="sectionTitle">Actions</h2>
-                        <button id="btnRunScan" is="emby-button" type="button" class="raised button-submit">
-                            Run Full Scan Now
-                        </button>
+                        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                            <button id="btnRunScan" is="emby-button" type="button" class="raised button-submit">
+                                Run Full Scan
+                            </button>
+                            <button id="btnRunCleanup" is="emby-button" type="button" class="raised button-submit">
+                                Run Cleanup
+                            </button>
+                        </div>
                     </div>
 
                     <!-- Danger Zone -->
@@ -208,27 +229,25 @@
                     <div class="verticalSection">
                         <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
                             <h2 class="sectionTitle" style="margin:0;">Linked Pairs</h2>
-                            <button id="btnRefreshPairs" is="emby-button" type="button" class="raised" style="padding:4px 12px;">
-                                Refresh
-                            </button>
+                            <span style="font-size:0.8em;color:#888;">Auto-refreshes every 10 seconds</span>
                         </div>
                         <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap;">
                             <input id="pairsSearch" type="text" is="emby-input" placeholder="Search by title or path..."
                                    style="flex:1;min-width:200px;" />
                             <select id="pairsStatusFilter" is="emby-select" style="min-width:120px;">
                                 <option value="">All Statuses</option>
-                                <option value="0">DryRun</option>
-                                <option value="1">Pending</option>
                                 <option value="2">Active</option>
+                                <option value="0">Dry Run</option>
                                 <option value="3">Error</option>
+                                <option value="1">Pending</option>
                             </select>
                             <select id="pairsLibraryFilter" is="emby-select" style="min-width:150px;">
                                 <option value="">All Libraries</option>
                             </select>
                             <select id="pairsSourceFilter" is="emby-select" style="min-width:130px;">
                                 <option value="">All Sources</option>
-                                <option value="plugin">Plugin-created</option>
-                                <option value="existing">Pre-existing</option>
+                                <option value="plugin">Plugin Created</option>
+                                <option value="existing">Pre Existing</option>
                             </select>
                         </div>
                         <div id="pairsControls" style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
@@ -242,13 +261,13 @@
                             <table id="pairsTable" class="tblSortable" style="width:100%;border-collapse:collapse;table-layout:fixed;">
                                 <thead>
                                     <tr>
-                                        <th style="text-align:left;padding:8px;width:25%;">Episode</th>
-                                        <th style="text-align:left;padding:8px;width:20%;">Movie</th>
-                                        <th style="text-align:left;padding:8px;width:12%;">Library</th>
+                                        <th style="text-align:left;padding:8px;width:25%;" data-sort-key="episode">Episode <span class="sort-arrow"></span></th>
+                                        <th style="text-align:left;padding:8px;width:20%;" data-sort-key="movie">Movie <span class="sort-arrow"></span></th>
+                                        <th style="text-align:left;padding:8px;width:12%;" data-sort-key="library">Library <span class="sort-arrow"></span></th>
                                         <th style="text-align:left;padding:8px;width:10%;">IDs</th>
-                                        <th style="text-align:left;padding:8px;width:8%;">Source</th>
-                                        <th style="text-align:left;padding:8px;width:8%;">Status</th>
-                                        <th style="text-align:left;padding:8px;width:9%;">Created</th>
+                                        <th style="text-align:left;padding:8px;width:8%;" data-sort-key="source">Source <span class="sort-arrow"></span></th>
+                                        <th style="text-align:left;padding:8px;width:8%;" data-sort-key="status">Status <span class="sort-arrow"></span></th>
+                                        <th style="text-align:left;padding:8px;width:9%;" data-sort-key="created">Created <span class="sort-arrow"></span></th>
                                         <th style="text-align:left;padding:8px;width:8%;"></th>
                                     </tr>
                                 </thead>
@@ -547,10 +566,12 @@
                     return result;
                 },
 
-                // Pairs paging
+                // Pairs sorting and paging
                 allPairs: [],
                 pairsPage: 0,
                 pairsPerPage: 25,
+                sortKey: 'created',
+                sortAsc: false,
 
                 loadPairs: function () {
                     ApiClient.ajax({
@@ -559,7 +580,6 @@
                         dataType: 'json'
                     }).then(function (pairs) {
                         SpecialToMovieConfig.allPairs = pairs || [];
-                        SpecialToMovieConfig.pairsPage = 0;
                         SpecialToMovieConfig.renderPairsPage();
                     }, function () {
                         SpecialToMovieConfig.allPairs = [];
@@ -600,6 +620,46 @@
                             var title = (p.MovieTitle || '').toLowerCase();
                             var path = (p.EpisodePath || '').toLowerCase();
                             return title.indexOf(search) >= 0 || path.indexOf(search) >= 0;
+                        });
+                    }
+
+                    var key = SpecialToMovieConfig.sortKey;
+                    var asc = SpecialToMovieConfig.sortAsc;
+                    if (key) {
+                        var statusMap = { 'DryRun': 0, 'Pending': 1, 'Active': 2, 'Error': 3 };
+                        pairs = pairs.slice().sort(function (a, b) {
+                            var va, vb;
+                            switch (key) {
+                                case 'episode':
+                                    va = (a.EpisodePath || '').toLowerCase();
+                                    vb = (b.EpisodePath || '').toLowerCase();
+                                    break;
+                                case 'movie':
+                                    va = (a.MovieTitle || '').toLowerCase();
+                                    vb = (b.MovieTitle || '').toLowerCase();
+                                    break;
+                                case 'library':
+                                    va = (SpecialToMovieConfig.getLibraryName(a.SourceLibraryId) || '').toLowerCase();
+                                    vb = (SpecialToMovieConfig.getLibraryName(b.SourceLibraryId) || '').toLowerCase();
+                                    break;
+                                case 'source':
+                                    va = a.IsExistingMovie ? 1 : 0;
+                                    vb = b.IsExistingMovie ? 1 : 0;
+                                    break;
+                                case 'status':
+                                    va = typeof a.Status === 'number' ? a.Status : (statusMap[a.Status] !== undefined ? statusMap[a.Status] : -1);
+                                    vb = typeof b.Status === 'number' ? b.Status : (statusMap[b.Status] !== undefined ? statusMap[b.Status] : -1);
+                                    break;
+                                case 'created':
+                                    va = a.CreatedUtc || '';
+                                    vb = b.CreatedUtc || '';
+                                    break;
+                                default:
+                                    return 0;
+                            }
+                            if (va < vb) return asc ? -1 : 1;
+                            if (va > vb) return asc ? 1 : -1;
+                            return 0;
                         });
                     }
 
@@ -749,7 +809,7 @@
                             var tdSource = document.createElement('td');
                             tdSource.style.cssText = 'padding:8px;font-size:0.85em;';
                             if (pair.IsExistingMovie) {
-                                tdSource.textContent = 'Pre-existing';
+                                tdSource.textContent = 'Pre Existing';
                                 tdSource.style.color = '#f0ad4e';
                             } else {
                                 tdSource.textContent = 'Plugin';
@@ -760,7 +820,7 @@
                             var tdStatus = document.createElement('td');
                             tdStatus.style.padding = '8px';
                             var status = pair.Status;
-                            var statusNames = { 0: 'DryRun', 1: 'Pending', 2: 'Active', 3: 'Error' };
+                            var statusNames = { 0: 'Dry Run', 1: 'Pending', 2: 'Active', 3: 'Error' };
                             var statusNum = (typeof status === 'number') ? status : ({ 'DryRun': 0, 'Pending': 1, 'Active': 2, 'Error': 3 }[status] || -1);
                             tdStatus.textContent = statusNames[statusNum] || status;
                             if (statusNum === 3 && pair.ErrorMessage) {
@@ -808,10 +868,36 @@
                     }
 
                     document.getElementById('pairsInfo').textContent =
-                        total === 0 ? '' : 'Showing ' + (start + 1) + '–' + end + ' of ' + total;
+                        total === 0 ? '' : 'Page ' + (page + 1) + ' of ' + totalPages + ' — Showing ' + (start + 1) + '–' + end + ' of ' + total;
 
                     document.getElementById('btnPairsPrev').disabled = (page <= 0);
                     document.getElementById('btnPairsNext').disabled = (page >= totalPages - 1);
+                },
+
+                sortByColumn: function (key) {
+                    if (SpecialToMovieConfig.sortKey === key) {
+                        SpecialToMovieConfig.sortAsc = !SpecialToMovieConfig.sortAsc;
+                    } else {
+                        SpecialToMovieConfig.sortKey = key;
+                        SpecialToMovieConfig.sortAsc = true;
+                    }
+                    SpecialToMovieConfig.pairsPage = 0;
+                    SpecialToMovieConfig.updateSortArrows();
+                    SpecialToMovieConfig.renderPairsPage();
+                },
+
+                updateSortArrows: function () {
+                    var headers = document.querySelectorAll('#pairsTable th[data-sort-key]');
+                    headers.forEach(function (th) {
+                        var arrow = th.querySelector('.sort-arrow');
+                        if (th.getAttribute('data-sort-key') === SpecialToMovieConfig.sortKey) {
+                            th.classList.add('sort-active');
+                            arrow.textContent = SpecialToMovieConfig.sortAsc ? '▲' : '▼';
+                        } else {
+                            th.classList.remove('sort-active');
+                            arrow.textContent = '';
+                        }
+                    });
                 }
             };
 
@@ -824,8 +910,9 @@
                         SpecialToMovieConfig.libraries = folders;
                         SpecialToMovieConfig.loadConfig();
                         SpecialToMovieConfig.populateLibraryFilter();
+                        SpecialToMovieConfig.loadPairs();
+                        SpecialToMovieConfig.updateSortArrows();
                     });
-                    SpecialToMovieConfig.loadPairs();
 
                     // Auto-refresh pairs every 10 seconds
                     if (pairsAutoRefreshInterval) clearInterval(pairsAutoRefreshInterval);
@@ -842,10 +929,11 @@
                     }
                 });
 
-            document.getElementById('btnRefreshPairs')
-                .addEventListener('click', function () {
-                    SpecialToMovieConfig.loadPairs();
+            document.querySelectorAll('#pairsTable th[data-sort-key]').forEach(function (th) {
+                th.addEventListener('click', function () {
+                    SpecialToMovieConfig.sortByColumn(th.getAttribute('data-sort-key'));
                 });
+            });
 
             document.getElementById('btnPairsPrev')
                 .addEventListener('click', function () {
@@ -1021,9 +1109,21 @@
                         type: 'POST',
                         url: ApiClient.getUrl('SpecialToMovie/RunFullScan')
                     }).then(function () {
-                        Dashboard.alert('Full scan started. Check the server log for progress.');
+                        Dashboard.alert('Full scan queued. Check Scheduled Tasks for progress.');
                     }, function () {
                         Dashboard.alert('Failed to start scan. Check the server log.');
+                    });
+                });
+
+            document.querySelector('#btnRunCleanup')
+                .addEventListener('click', function () {
+                    ApiClient.ajax({
+                        type: 'POST',
+                        url: ApiClient.getUrl('SpecialToMovie/RunCleanup')
+                    }).then(function () {
+                        Dashboard.alert('Cleanup queued. Check Scheduled Tasks for progress.');
+                    }, function () {
+                        Dashboard.alert('Failed to start cleanup. Check the server log.');
                     });
                 });
         </script>

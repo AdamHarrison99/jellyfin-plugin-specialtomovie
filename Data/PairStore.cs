@@ -21,6 +21,8 @@ public interface IPairStore
 
     void Upsert(LinkedPair pair);
 
+    void UpsertMany(IEnumerable<LinkedPair> pairs);
+
     void Remove(Guid pairId);
 
     int Clear();
@@ -135,6 +137,34 @@ public class PairStore : IPairStore
                 }
 
                 _pairs.Add(pair);
+            }
+
+            Save();
+        }
+    }
+
+    public void UpsertMany(IEnumerable<LinkedPair> pairs)
+    {
+        lock (_lock)
+        {
+            foreach (var pair in pairs)
+            {
+                pair.UpdatedUtc = DateTime.UtcNow;
+
+                var index = _pairs.FindIndex(p => p.Id == pair.Id);
+                if (index >= 0)
+                {
+                    _pairs[index] = pair;
+                }
+                else
+                {
+                    if (pair.CreatedUtc == default)
+                    {
+                        pair.CreatedUtc = DateTime.UtcNow;
+                    }
+
+                    _pairs.Add(pair);
+                }
             }
 
             Save();
