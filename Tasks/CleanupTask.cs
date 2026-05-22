@@ -37,7 +37,7 @@ public class CleanupTask : IScheduledTask
 
     public string Key => "SpecialToMovieCleanup";
 
-    public string Description => "Validates all linked pairs: promotes pending pairs to active, recreates missing hard links, and retries errors. Orphaned hard link folders are only deleted when 'auto-delete on removal' is enabled in the plugin settings.";
+    public string Description => "Validates all existing pairs and repairs inconsistencies. Removes pairs for deleted episodes, recreates hard links that were manually deleted from disk, promotes Pending pairs to Active once Jellyfin finishes scanning the movie, and retries Error pairs if the underlying issue has been resolved. Orphaned hard link folders are only deleted when 'auto-delete on removal' is enabled.";
 
     public string Category => "SpecialToMovie";
 

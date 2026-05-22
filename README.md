@@ -2,29 +2,24 @@
 
 Automatically detects TV specials (Season 0 episodes) that are also standalone movies, creates hard links in your movie library, and syncs watch status bidirectionally.
 
-## The Problem
+## About
 
 Many TV specials are also standalone movies — *El Camino: A Breaking Bad Movie*, *Downton Abbey: A New Era*, *Serenity*, etc. Jellyfin users want these in both their TV and Movies libraries, but Jellyfin tracks watch status by internal item ID. Two separate library entries means two unrelated items with independent watch states.
 
-Manual hard links solve the file deduplication problem, but **watch status still doesn't sync**.
-
-## What This Plugin Does
-
-1. **Detects** Season 0 episodes that are also movies using TMDB and TVDB cross-referencing
-2. **Creates hard links** in your movie library (no disk space wasted — same file, two directory entries)
-3. **Syncs watch status** bidirectionally — mark the movie as watched and the episode updates too, and vice versa
-4. **Cleans up** automatically when episodes or movies are removed
+Manual hard links solve the file deduplication problem, but **watch status still doesn't sync**. This plugin handles both — it creates the hard links and keeps watch state in sync bidirectionally.
 
 ## Features
 
+- **Automatic detection** — identifies Season 0 episodes that are also movies using TMDB and TVDB cross-referencing
+- **Hard links** — no disk space wasted, same file with two directory entries
+- **Bidirectional watch sync** — mark the movie as watched and the episode updates too, and vice versa
 - **Dry run mode** (on by default) — review what the plugin would do before enabling real linking
-- **Dual metadata lookup** — cross-references both TMDB and TVDB for high-confidence matching
-- **Library mapping** — route specials from specific TV libraries to specific movie libraries
 - **Existing movie detection** — if the movie already exists in your library, pairs it directly without creating a hard link
+- **Library mapping** — route specials from specific TV libraries to specific movie libraries
 - **NFO metadata** — writes Kodi-compatible NFO files so Jellyfin identifies linked movies correctly
 - **Force links & ignore list** — manually override or exclude specific episodes
-- **Automatic cleanup** — validates pairs periodically and fixes orphaned entries
 - **Safe deletion** — only removes files in plugin-managed `[JellyfinPlugin-SpecialToMovie]` folders
+- **Automatic cleanup** — validates pairs periodically and fixes orphaned entries
 
 ## Requirements
 
@@ -103,6 +98,42 @@ Dry run mode is **enabled by default**. The plugin will:
 
 Once you're satisfied with the detected matches, **uncheck "Dry run mode"** and save. The next scan will create hard links for all detected pairs and activate watch sync.
 
+## Deletion Behavior
+
+| Setting | What Happens |
+|---|---|
+| Default (auto-delete off) | Removing an episode or movie removes the pair from the database. Hard link folders stay on disk until manually cleaned up. |
+| Auto-delete on | Removing an episode deletes its linked movie folder. Removing a movie deletes its linked folder (episode untouched). |
+| Auto-delete + two-way | Removing either item deletes both the hard link folder and the original episode file. |
+
+The **Remove All Hard Links** button in the config page deletes all plugin-created folders. Pre-existing movie links and original episode files are never touched by this action.
+
+## Scheduled Tasks
+
+The plugin registers two scheduled tasks in Jellyfin's **Scheduled Tasks** dashboard. These act as a safety net — during normal operation with auto-detect enabled, the event-driven handlers cover most cases in real time.
+
+### Full Scan (defaults to daily at midnight)
+
+Scans all Season 0 episodes across your configured library mappings and looks up each against TMDB/TVDB. This catches anything the real-time event handler missed:
+
+- Episodes that existed before the plugin was installed
+- Episodes added while the plugin was stopped or Jellyfin was restarting
+- Previously failed lookups that may now succeed (new data on TMDB/TVDB)
+- DryRun pairs that need promotion after dry run mode is disabled
+
+Also re-syncs watch state for all active pairs, catching any drift that occurred while the plugin was inactive.
+
+### Cleanup (defaults to every 12 hours)
+
+Validates all existing pairs and repairs inconsistencies:
+
+- Removes pairs whose source episode no longer exists in Jellyfin
+- Recreates hard links that were manually deleted from disk
+- Promotes Pending pairs to Active once Jellyfin finishes scanning the movie
+- Retries Error pairs if the underlying issue has been resolved
+
+Both tasks can be run manually from the Jellyfin Scheduled Tasks dashboard, and their intervals can be adjusted there.
+
 ## How It Works
 
 ```
@@ -124,15 +155,13 @@ Movie already in destination library?
 Watch sync active — mark one as watched, the other updates
 ```
 
-## Deletion Behavior
+## Known Limitations
 
-| Setting | What Happens |
-|---|---|
-| Default (auto-delete off) | Removing an episode or movie removes the pair from the database. Hard link folders stay on disk until manually cleaned up. |
-| Auto-delete on | Removing an episode deletes its linked movie folder. Removing a movie deletes its linked folder (episode untouched). |
-| Auto-delete + two-way | Removing either item deletes both the hard link folder and the original episode file. |
+### Duplicate entries in Next Up / Continue Watching
 
-The **Remove All Hard Links** button in the config page deletes all plugin-created folders and transitions pairs back to dry run status. Original episode files are never touched by this action.
+Because both the episode and its linked movie are fully independent Jellyfin items with synced playback progress, both may appear in the **Next Up** or **Continue Watching** sections simultaneously. Jellyfin's plugin API does not currently provide a way to filter or modify these built-in API responses, so the plugin cannot suppress the duplicate entry.
+
+See [#1](https://github.com/AdamHarrison99/jellyfin-plugin-specialtomovie/issues/1) for details and potential future approaches.
 
 ## FAQ
 
@@ -150,14 +179,6 @@ Hard links remain on disk (they're just regular files). Watch sync stops. You ca
 
 **Q: Will this interfere with my existing metadata?**
 No. The plugin creates movies in `[JellyfinPlugin-SpecialToMovie]`-tagged folders and writes NFO files with correct provider IDs. Your existing library entries are not modified.
-
-## Known Limitations
-
-### Duplicate entries in Next Up / Continue Watching
-
-Because both the episode and its linked movie are fully independent Jellyfin items with synced playback progress, both may appear in the **Next Up** or **Continue Watching** sections simultaneously. Jellyfin's plugin API does not currently provide a way to filter or modify these built-in API responses, so the plugin cannot suppress the duplicate entry.
-
-See [#1](https://github.com/AdamHarrison99/jellyfin-plugin-specialtomovie/issues/1) for details and potential future approaches.
 
 ---
 
