@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "1.0.11.0",
+        "changelog": "Replace per-row remove buttons with checkbox multi-select and bulk remove via three-dot menu. Full scan and cleanup now enforce ignore list (removing existing pairs) and process force links (creating missing pairs). Style UI buttons and checkboxes consistently.",
+        "targetAbi": "10.11.9.0",
+        "sourceUrl": "https://github.com/AdamHarrison99/jellyfin-plugin-specialtomovie/releases/download/v1.0.11/specialtomovie-v1.0.11.zip",
+        "checksum": "7085f10943df222ad83a1beded42c673",
+        "timestamp": "2026-05-23T16:15:08Z"
+      },
+      {
         "version": "1.0.10.0",
         "changelog": "Cache all API responses (not just 404s) to reduce TMDB/TVDB calls on repeated scans. Add OVA linking support for TVDB episodes tagged as OVA. Add Clear Metadata Cache button. Default cache duration changed to 7 days.",
         "targetAbi": "10.11.9.0",
