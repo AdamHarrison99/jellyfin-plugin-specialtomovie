@@ -2,6 +2,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using Jellyfin.Plugin.SpecialToMovie.Data;
+using Jellyfin.Plugin.SpecialToMovie.Lookup;
 using Jellyfin.Plugin.SpecialToMovie.Models;
 using Jellyfin.Plugin.SpecialToMovie.Tasks;
 using MediaBrowser.Controller.Library;
@@ -23,6 +24,7 @@ public class SpecialToMovieController : ControllerBase
     private readonly ILibraryManager _libraryManager;
     private readonly ITaskManager _taskManager;
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly ApiResponseCache _apiCache;
     private readonly ILogger<SpecialToMovieController> _logger;
 
     public SpecialToMovieController(
@@ -30,12 +32,14 @@ public class SpecialToMovieController : ControllerBase
         ILibraryManager libraryManager,
         ITaskManager taskManager,
         IHttpClientFactory httpClientFactory,
+        ApiResponseCache apiCache,
         ILogger<SpecialToMovieController> logger)
     {
         _pairStore = pairStore;
         _libraryManager = libraryManager;
         _taskManager = taskManager;
         _httpClientFactory = httpClientFactory;
+        _apiCache = apiCache;
         _logger = logger;
     }
 
@@ -196,6 +200,15 @@ public class SpecialToMovieController : ControllerBase
         var count = _pairStore.Clear();
 
         _logger.LogInformation("Database cleared: removed {Count} pairs", count);
+        return Ok(new { Removed = count });
+    }
+
+    [HttpPost("ClearMetadataCache")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public ActionResult ClearMetadataCache()
+    {
+        var count = _apiCache.Clear();
+        _logger.LogInformation("Metadata cache cleared: removed {Count} entries", count);
         return Ok(new { Removed = count });
     }
 

@@ -145,12 +145,28 @@
                         <span id="tvdbTestResult" style="margin-left:10px;"></span>
 
                         <div class="inputContainer" style="margin-top:16px;">
-                            <label class="inputLabel inputLabelUnfocused" for="txtNotFoundCacheDays">API 404 cache duration (days)</label>
-                            <input id="txtNotFoundCacheDays" type="number" min="0" max="365" is="emby-input" />
+                            <label class="inputLabel inputLabelUnfocused" for="txtMetadataCacheDays">Metadata cache duration (days)</label>
+                            <input id="txtMetadataCacheDays" type="number" min="0" max="365" is="emby-input" />
                             <div class="fieldDescription">
-                                How long to remember API endpoints that returned "not found" before retrying.
-                                Prevents repeated calls for episodes that don't exist on TMDB/TVDB.
-                                Set to 0 to never retry — cached 404s are permanent until the database is cleared.
+                                How long to cache API responses from TMDB/TVDB before re-fetching.
+                                Reduces API calls on repeated scans. Set to 0 to cache permanently until manually cleared.
+                            </div>
+                        </div>
+
+                        <button id="btnClearMetadataCache" is="emby-button" type="button" class="raised">
+                            Clear Metadata Cache
+                        </button>
+                        <span id="cacheTestResult" style="margin-left:10px;"></span>
+
+                        <div class="checkboxContainer checkboxContainer-withDescription" style="margin-top:16px;">
+                            <label class="emby-checkbox-label">
+                                <input id="chkAllowOva" type="checkbox" is="emby-checkbox" />
+                                <span>Allow OVAs to link as movies</span>
+                            </label>
+                            <div class="fieldDescription">
+                                Some entries on TVDB are tagged as OVAs (Original Video Animations) rather than movies,
+                                even when they were released theatrically or as standalone films. Enable this to treat
+                                TVDB episodes with Special Category "OVA" the same as "Movies" for matching purposes.
                             </div>
                         </div>
 
@@ -323,6 +339,7 @@
                     ApiClient.getPluginConfiguration(SpecialToMovieConfig.pluginUniqueId).then(function (config) {
                         page.querySelector('#chkDryRun').checked = config.DryRunMode;
                         page.querySelector('#chkAutoDetect').checked = config.AutoDetectEnabled;
+                        page.querySelector('#chkAllowOva').checked = config.AllowOvaLinking;
                         page.querySelector('#chkDualConfirmation').checked = config.RequireDualConfirmation;
                         page.querySelector('#chkAutoDelete').checked = config.AutoDeleteOnRemoval;
                         page.querySelector('#chkTwoWayDeletion').checked = config.TwoWayDeletion;
@@ -330,7 +347,7 @@
                         page.querySelector('#selectPrimaryProvider').value = (pv === 1 || pv === 'Tvdb') ? 'Tvdb' : 'Tmdb';
                         page.querySelector('#txtTmdbApiKey').value = config.TmdbApiKey || '';
                         page.querySelector('#txtTvdbApiKey').value = config.TvdbApiKey || '';
-                        page.querySelector('#txtNotFoundCacheDays').value = config.NotFoundCacheDays != null ? config.NotFoundCacheDays : 14;
+                        page.querySelector('#txtMetadataCacheDays').value = config.MetadataCacheDays != null ? config.MetadataCacheDays : 7;
 
                         SpecialToMovieConfig.updateDryRunBanner(config.DryRunMode);
                         SpecialToMovieConfig.updateTwoWayState(config.AutoDeleteOnRemoval);
@@ -352,14 +369,15 @@
                     ApiClient.getPluginConfiguration(SpecialToMovieConfig.pluginUniqueId).then(function (config) {
                         config.DryRunMode = page.querySelector('#chkDryRun').checked;
                         config.AutoDetectEnabled = page.querySelector('#chkAutoDetect').checked;
+                        config.AllowOvaLinking = page.querySelector('#chkAllowOva').checked;
                         config.RequireDualConfirmation = page.querySelector('#chkDualConfirmation').checked;
                         config.AutoDeleteOnRemoval = page.querySelector('#chkAutoDelete').checked;
                         config.TwoWayDeletion = page.querySelector('#chkTwoWayDeletion').checked;
                         config.PrimaryProvider = page.querySelector('#selectPrimaryProvider').value;
                         config.TmdbApiKey = page.querySelector('#txtTmdbApiKey').value.trim();
                         config.TvdbApiKey = page.querySelector('#txtTvdbApiKey').value.trim();
-                        var cacheDaysVal = parseInt(page.querySelector('#txtNotFoundCacheDays').value, 10);
-                        config.NotFoundCacheDays = isNaN(cacheDaysVal) ? 14 : cacheDaysVal;
+                        var cacheDaysVal = parseInt(page.querySelector('#txtMetadataCacheDays').value, 10);
+                        config.MetadataCacheDays = isNaN(cacheDaysVal) ? 7 : cacheDaysVal;
 
                         config.LibraryMappings = SpecialToMovieConfig.collectLibraryMappings();
                         var newForceLinks = SpecialToMovieConfig.collectForceLinks();
@@ -884,7 +902,7 @@
                             removeBtn.style.cssText = 'cursor:pointer;color:#d9534f;background:none;border:1px solid #d9534f;padding:2px 6px;border-radius:3px;white-space:nowrap;font-size:0.85em;';
                             removeBtn.addEventListener('click', (function (pairId) {
                                 return function () {
-                                    if (!confirm('Remove this pair from the database?')) return;
+                                    if (!confirm('Remove this pair from the database?\n\nThe hard-linked movie file on disk (if exists) will NOT be deleted. Use "Remove All Hard Links" to clean up files.')) return;
                                     ApiClient.ajax({
                                         type: 'POST',
                                         url: ApiClient.getUrl('SpecialToMovie/RemovePair'),
@@ -1074,6 +1092,24 @@
                         resultSpan.style.color = result.Success ? '#5cb85c' : '#d9534f';
                     }, function () {
                         resultSpan.textContent = 'Request failed';
+                        resultSpan.style.color = '#d9534f';
+                    });
+                });
+
+            document.querySelector('#btnClearMetadataCache')
+                .addEventListener('click', function () {
+                    var resultSpan = document.getElementById('cacheTestResult');
+                    resultSpan.textContent = 'Clearing...';
+                    resultSpan.style.color = '';
+                    ApiClient.ajax({
+                        type: 'POST',
+                        url: ApiClient.getUrl('SpecialToMovie/ClearMetadataCache'),
+                        dataType: 'json'
+                    }).then(function (result) {
+                        resultSpan.textContent = 'Cleared ' + (result.Removed || 0) + ' cached entries';
+                        resultSpan.style.color = '#5cb85c';
+                    }, function () {
+                        resultSpan.textContent = 'Failed to clear cache';
                         resultSpan.style.color = '#d9534f';
                     });
                 });

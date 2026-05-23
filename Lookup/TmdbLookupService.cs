@@ -24,14 +24,14 @@ public class TmdbLookupService : IMetadataLookupService, IDisposable
     private readonly IServerConfigurationManager _configManager;
     private readonly ILogger<TmdbLookupService> _logger;
     private readonly SemaphoreSlim _rateLimiter = new(30, 30);
-    private readonly NotFoundCache _notFoundCache;
+    private readonly ApiResponseCache _apiCache;
 
-    public TmdbLookupService(IHttpClientFactory httpClientFactory, IServerConfigurationManager configManager, ILogger<TmdbLookupService> logger, NotFoundCache notFoundCache)
+    public TmdbLookupService(IHttpClientFactory httpClientFactory, IServerConfigurationManager configManager, ILogger<TmdbLookupService> logger, ApiResponseCache apiCache)
     {
         _httpClientFactory = httpClientFactory;
         _configManager = configManager;
         _logger = logger;
-        _notFoundCache = notFoundCache;
+        _apiCache = apiCache;
     }
 
     public void Dispose()
@@ -269,11 +269,12 @@ public class TmdbLookupService : IMetadataLookupService, IDisposable
     private async Task<string?> SendWithRetryAsync(string url, CancellationToken cancellationToken)
     {
         var cacheKey = StripApiKey(url);
-        var cacheDays = Plugin.Instance?.Configuration.NotFoundCacheDays ?? 14;
-        if (_notFoundCache.IsNotFound(cacheKey, cacheDays))
+        var cacheDays = Plugin.Instance?.Configuration.MetadataCacheDays ?? 7;
+        if (_apiCache.IsCached(cacheKey, cacheDays))
         {
-            _logger.LogDebug("TMDB cache hit (previous 404): {Path}", cacheKey);
-            return null;
+            var cached = _apiCache.Get(cacheKey, cacheDays);
+            _logger.LogDebug("TMDB cache hit: {Path}", cacheKey);
+            return cached;
         }
 
         await _rateLimiter.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -303,7 +304,7 @@ public class TmdbLookupService : IMetadataLookupService, IDisposable
 
                 if (response.StatusCode == HttpStatusCode.NotFound)
                 {
-                    _notFoundCache.Add(cacheKey);
+                    _apiCache.Add(cacheKey, null);
                     _logger.LogDebug("TMDB 404 cached: {Path}", cacheKey);
                     return null;
                 }
@@ -328,6 +329,7 @@ public class TmdbLookupService : IMetadataLookupService, IDisposable
                     return null;
                 }
 
+                _apiCache.Add(cacheKey, body);
                 return body;
             }
 

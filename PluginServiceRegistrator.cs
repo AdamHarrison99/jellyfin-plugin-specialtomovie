@@ -19,7 +19,7 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
     {
         serviceCollection.AddSingleton<IPairStore, PairStore>();
 
-        serviceCollection.AddSingleton<NotFoundCache>();
+        serviceCollection.AddSingleton<ApiResponseCache>();
         serviceCollection.AddSingleton<TmdbLookupService>();
         serviceCollection.AddSingleton<TvdbLookupService>();
         serviceCollection.AddSingleton<AggregatedLookupService>();

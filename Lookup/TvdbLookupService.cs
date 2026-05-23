@@ -29,17 +29,17 @@ public class TvdbLookupService : IMetadataLookupService, IDisposable
     private readonly ILogger<TvdbLookupService> _logger;
     private readonly SemaphoreSlim _rateLimiter = new(5, 5);
     private readonly SemaphoreSlim _authLock = new(1, 1);
-    private readonly NotFoundCache _notFoundCache;
+    private readonly ApiResponseCache _apiCache;
 
     private volatile string? _bearerToken;
     private long _tokenExpiryTicks;
 
-    public TvdbLookupService(IHttpClientFactory httpClientFactory, IServerConfigurationManager configManager, ILogger<TvdbLookupService> logger, NotFoundCache notFoundCache)
+    public TvdbLookupService(IHttpClientFactory httpClientFactory, IServerConfigurationManager configManager, ILogger<TvdbLookupService> logger, ApiResponseCache apiCache)
     {
         _httpClientFactory = httpClientFactory;
         _configManager = configManager;
         _logger = logger;
-        _notFoundCache = notFoundCache;
+        _apiCache = apiCache;
     }
 
     public void Dispose()
@@ -95,20 +95,23 @@ public class TvdbLookupService : IMetadataLookupService, IDisposable
             return await GetMovieByIdAsync(episode.LinkedMovie.Value, token, cancellationToken).ConfigureAwait(false);
         }
 
-        // Fallback: check if the episode is tagged as "Special Category: Movies"
-        var isMovieTag = episode.TagOptions?.Any(t =>
-            string.Equals(t.TagName, "Special Category", StringComparison.OrdinalIgnoreCase) &&
-            string.Equals(t.Name, "Movies", StringComparison.OrdinalIgnoreCase)) == true;
+        var specialCategory = episode.TagOptions?.FirstOrDefault(t =>
+            string.Equals(t.TagName, "Special Category", StringComparison.OrdinalIgnoreCase))?.Name;
 
-        if (!isMovieTag)
+        var isMovieTag = string.Equals(specialCategory, "Movies", StringComparison.OrdinalIgnoreCase);
+        var isOvaTag = string.Equals(specialCategory, "OVA", StringComparison.OrdinalIgnoreCase);
+
+        var allowOva = Plugin.Instance?.Configuration.AllowOvaLinking == true;
+
+        if (!isMovieTag && !(isOvaTag && allowOva))
         {
-            _logger.LogDebug("TVDB episode {Id} has no linkedMovie and no movie tag", episodeTvdbId);
+            _logger.LogDebug("TVDB episode {Id} has no linkedMovie and no matching tag (category: {Category})", episodeTvdbId, specialCategory ?? "none");
             return null;
         }
 
         _logger.LogInformation(
-            "TVDB episode {Id} has Special Category 'Movies' tag, using episode metadata as movie match",
-            episodeTvdbId);
+            "TVDB episode {Id} has Special Category '{Category}' tag, using episode metadata as movie match",
+            episodeTvdbId, specialCategory);
 
         int? year = null;
         if (!string.IsNullOrEmpty(episode.Year) &&
@@ -322,11 +325,12 @@ public class TvdbLookupService : IMetadataLookupService, IDisposable
 
     private async Task<string?> SendWithRetryAsync(string url, string token, CancellationToken cancellationToken)
     {
-        var cacheDays = Plugin.Instance?.Configuration.NotFoundCacheDays ?? 14;
-        if (_notFoundCache.IsNotFound(url, cacheDays))
+        var cacheDays = Plugin.Instance?.Configuration.MetadataCacheDays ?? 7;
+        if (_apiCache.IsCached(url, cacheDays))
         {
-            _logger.LogDebug("TVDB cache hit (previous 404): {Url}", url);
-            return null;
+            var cached = _apiCache.Get(url, cacheDays);
+            _logger.LogDebug("TVDB cache hit: {Url}", url);
+            return cached;
         }
 
         await _rateLimiter.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -364,7 +368,7 @@ public class TvdbLookupService : IMetadataLookupService, IDisposable
 
                 if (response.StatusCode == HttpStatusCode.NotFound)
                 {
-                    _notFoundCache.Add(url);
+                    _apiCache.Add(url, null);
                     _logger.LogDebug("TVDB 404 cached: {Url}", url);
                     return null;
                 }
@@ -389,6 +393,7 @@ public class TvdbLookupService : IMetadataLookupService, IDisposable
                     return null;
                 }
 
+                _apiCache.Add(url, body);
                 return body;
             }
 

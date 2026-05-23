@@ -1,51 +1,76 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using MediaBrowser.Common.Configuration;
 using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.SpecialToMovie.Lookup;
 
-public sealed class NotFoundCache : IDisposable
+public sealed class ApiResponseCache : IDisposable
 {
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = false };
 
-    private readonly ConcurrentDictionary<string, long> _cache = new();
+    private readonly ConcurrentDictionary<string, CacheEntry> _cache = new();
     private readonly string _filePath;
-    private readonly ILogger<NotFoundCache> _logger;
+    private readonly ILogger<ApiResponseCache> _logger;
     private readonly object _saveLock = new();
     private Timer? _saveTimer;
     private volatile bool _dirty;
     private volatile bool _disposed;
 
-    public NotFoundCache(IApplicationPaths applicationPaths, ILogger<NotFoundCache> logger)
+    public ApiResponseCache(IApplicationPaths applicationPaths, ILogger<ApiResponseCache> logger)
     {
         _logger = logger;
         var pluginDataDir = Path.Combine(applicationPaths.PluginConfigurationsPath, "SpecialToMovie");
         Directory.CreateDirectory(pluginDataDir);
-        _filePath = Path.Combine(pluginDataDir, "notfound_cache.json");
+        _filePath = Path.Combine(pluginDataDir, "api_cache.json");
         LoadFromDisk();
     }
 
-    public bool IsNotFound(string key, int cacheDays)
+    public string? Get(string key, int cacheDays)
     {
-        if (!_cache.TryGetValue(key, out var cachedTicks))
+        if (!_cache.TryGetValue(key, out var entry))
+        {
+            return null;
+        }
+
+        if (cacheDays > 0 && (DateTime.UtcNow.Ticks - entry.Timestamp) >= TimeSpan.FromDays(cacheDays).Ticks)
+        {
+            _cache.TryRemove(key, out _);
+            return null;
+        }
+
+        return entry.Response;
+    }
+
+    public bool IsCached(string key, int cacheDays)
+    {
+        if (!_cache.TryGetValue(key, out var entry))
         {
             return false;
         }
 
-        // 0 = never retry (cached forever)
-        if (cacheDays <= 0)
+        if (cacheDays > 0 && (DateTime.UtcNow.Ticks - entry.Timestamp) >= TimeSpan.FromDays(cacheDays).Ticks)
         {
-            return true;
+            _cache.TryRemove(key, out _);
+            return false;
         }
 
-        return (DateTime.UtcNow.Ticks - cachedTicks) < TimeSpan.FromDays(cacheDays).Ticks;
+        return true;
     }
 
-    public void Add(string key)
+    public void Add(string key, string? response)
     {
-        _cache[key] = DateTime.UtcNow.Ticks;
+        _cache[key] = new CacheEntry { Timestamp = DateTime.UtcNow.Ticks, Response = response };
         ScheduleSave();
+    }
+
+    public int Clear()
+    {
+        var count = _cache.Count;
+        _cache.Clear();
+        ScheduleSave();
+        return count;
     }
 
     public void Dispose()
@@ -86,31 +111,31 @@ public sealed class NotFoundCache : IDisposable
             }
 
             var json = File.ReadAllText(_filePath);
-            var entries = JsonSerializer.Deserialize<Dictionary<string, long>>(json);
+            var entries = JsonSerializer.Deserialize<Dictionary<string, CacheEntry>>(json);
             if (entries == null)
             {
                 return;
             }
 
-            var cacheDays = Plugin.Instance?.Configuration.NotFoundCacheDays ?? 14;
+            var cacheDays = Plugin.Instance?.Configuration.MetadataCacheDays ?? 7;
             var maxAge = cacheDays <= 0 ? long.MaxValue : TimeSpan.FromDays(cacheDays).Ticks;
             var now = DateTime.UtcNow.Ticks;
             int loaded = 0;
 
-            foreach (var (key, ticks) in entries)
+            foreach (var (key, entry) in entries)
             {
-                if ((now - ticks) < maxAge)
+                if ((now - entry.Timestamp) < maxAge)
                 {
-                    _cache[key] = ticks;
+                    _cache[key] = entry;
                     loaded++;
                 }
             }
 
-            _logger.LogInformation("Loaded {Count} not-found cache entries from disk", loaded);
+            _logger.LogInformation("Loaded {Count} API cache entries from disk", loaded);
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to load not-found cache from disk, starting fresh");
+            _logger.LogWarning(ex, "Failed to load API cache from disk, starting fresh");
         }
     }
 
@@ -127,16 +152,16 @@ public sealed class NotFoundCache : IDisposable
         try
         {
             _dirty = false;
-            var cacheDays = Plugin.Instance?.Configuration.NotFoundCacheDays ?? 14;
+            var cacheDays = Plugin.Instance?.Configuration.MetadataCacheDays ?? 7;
             var maxAge = cacheDays <= 0 ? long.MaxValue : TimeSpan.FromDays(cacheDays).Ticks;
             var now = DateTime.UtcNow.Ticks;
 
-            var entries = new Dictionary<string, long>();
-            foreach (var (key, ticks) in _cache)
+            var entries = new Dictionary<string, CacheEntry>();
+            foreach (var (key, entry) in _cache)
             {
-                if ((now - ticks) < maxAge)
+                if ((now - entry.Timestamp) < maxAge)
                 {
-                    entries[key] = ticks;
+                    entries[key] = entry;
                 }
             }
 
@@ -144,11 +169,20 @@ public sealed class NotFoundCache : IDisposable
             File.WriteAllText(tmpPath, JsonSerializer.Serialize(entries, JsonOptions));
             File.Move(tmpPath, _filePath, overwrite: true);
 
-            _logger.LogDebug("Saved {Count} not-found cache entries to disk", entries.Count);
+            _logger.LogDebug("Saved {Count} API cache entries to disk", entries.Count);
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to save not-found cache to disk");
+            _logger.LogWarning(ex, "Failed to save API cache to disk");
         }
+    }
+
+    private sealed class CacheEntry
+    {
+        [JsonPropertyName("t")]
+        public long Timestamp { get; set; }
+
+        [JsonPropertyName("r")]
+        public string? Response { get; set; }
     }
 }

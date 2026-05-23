@@ -32,6 +32,8 @@ public class PluginConfiguration : BasePluginConfiguration
 
     public bool AutoDetectEnabled { get; set; } = true;
 
+    public bool AllowOvaLinking { get; set; } = false;
+
     public bool RequireDualConfirmation { get; set; } = false;
 
     public List<LibraryMapping> LibraryMappings { get; set; } = new();
@@ -46,7 +48,7 @@ public class PluginConfiguration : BasePluginConfiguration
 
     public bool TwoWayDeletion { get; set; } = false;
 
-    public int NotFoundCacheDays { get; set; } = 14;
+    public int MetadataCacheDays { get; set; } = 7;
 }
 
 /// <summary>

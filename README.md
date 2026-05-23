@@ -141,13 +141,13 @@ Already paired? → Skip
     ↓
 Library mapping exists? → No → Skip
     ↓
-In cache? → Yes → Skip (default 14 days, configurable)
+In cache? → Yes → Return cached result (default 7 days, configurable)
     ↓
 TMDB + TVDB lookup (parallel)
     ↓
 Both match? → Primary provider wins (configurable, default TMDB)
     ↓
-Match found? → No → Cache 404 → Skip
+Match found? → No → Cache miss → Skip
     ↓
 Movie already in destination library?
     ├── Yes → Pair directly (no hard link needed)
@@ -178,6 +178,9 @@ Yes. Make sure your TV and movie library paths are on the same Docker volume/mou
 
 **Q: What happens if I uninstall the plugin?**
 Hard links remain on disk (they're just regular files). Watch sync stops. You can use "Remove All Hard Links" before uninstalling for a clean removal.
+
+**Q: I changed my metadata provider settings but matches aren't updating.**
+The plugin caches all API responses (default 7 days) to reduce API traffic. After changing your metadata provider or API keys, click **Clear Metadata Cache** on the plugin config page, then run a full scan to re-fetch everything with the new settings.
 
 **Q: Will this interfere with my existing metadata?**
 No. The plugin creates movies in `[JellyfinPlugin-SpecialToMovie]`-tagged folders and writes NFO files with correct provider IDs. Your existing library entries are not modified.
