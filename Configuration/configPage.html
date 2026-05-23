@@ -2,113 +2,114 @@
 <html>
 <head>
     <title>Special To Movie</title>
-    <style>
-        #pairsTable td.wrap-long {
-            word-break: break-all;
-            overflow-wrap: anywhere;
-            max-width: 0;
-        }
-        #pairsTable th[data-sort-key] {
-            cursor: pointer;
-            user-select: none;
-            white-space: nowrap;
-        }
-        #pairsTable th[data-sort-key]:hover {
-            text-decoration: underline;
-        }
-        #pairsTable th .sort-arrow {
-            font-size: 0.7em;
-            margin-left: 4px;
-            opacity: 0.5;
-        }
-        #pairsTable th.sort-active .sort-arrow {
-            opacity: 1;
-        }
-        #chkSelectAll,
-        .pair-select,
-        .mapping-enabled {
-            width: 18px;
-            height: 18px;
-            cursor: pointer;
-            accent-color: #00a4dc;
-        }
-        .mapping-remove,
-        .forcelink-remove,
-        .ignore-remove {
-            cursor: pointer;
-            color: #d9534f;
-            background: none;
-            border: 1px solid #d9534f;
-            padding: 2px 6px;
-            border-radius: 3px;
-            white-space: nowrap;
-            font-size: 0.85em;
-        }
-        .mapping-remove:hover,
-        .forcelink-remove:hover,
-        .ignore-remove:hover {
-            background: rgba(217,83,79,0.15);
-        }
-        .pairs-menu-wrapper {
-            position: relative;
-            display: inline-block;
-        }
-        .pairs-menu-btn {
-            background: none;
-            border: 1px solid #555;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 1.2em;
-            line-height: 1;
-            padding: 2px 8px;
-            color: inherit;
-        }
-        .pairs-menu-btn:hover {
-            background: rgba(255,255,255,0.1);
-        }
-        .pairs-menu-dropdown {
-            display: none;
-            position: absolute;
-            right: 0;
-            top: 100%;
-            background: #2c2c2c;
-            border: 1px solid #555;
-            border-radius: 4px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
-            z-index: 100;
-            min-width: 180px;
-            margin-top: 4px;
-        }
-        .pairs-menu-dropdown.open {
-            display: block;
-        }
-        .pairs-menu-dropdown button {
-            display: block;
-            width: 100%;
-            text-align: left;
-            background: none;
-            border: none;
-            color: #d9534f;
-            padding: 8px 14px;
-            cursor: pointer;
-            font-size: 0.9em;
-            white-space: nowrap;
-        }
-        .pairs-menu-dropdown button:hover {
-            background: rgba(255,255,255,0.08);
-        }
-        .pairs-menu-dropdown button:disabled {
-            color: #666;
-            cursor: default;
-        }
-        .pairs-menu-dropdown button:disabled:hover {
-            background: none;
-        }
-    </style>
 </head>
 <body>
     <div id="SpecialToMovieConfigPage" data-role="page" class="page type-interior pluginConfigurationPage"
          data-require="emby-input,emby-button,emby-checkbox,emby-select">
+
+        <style>
+            #pairsTable td.wrap-long {
+                word-break: break-all;
+                overflow-wrap: anywhere;
+                max-width: 0;
+            }
+            #pairsTable th[data-sort-key] {
+                cursor: pointer;
+                user-select: none;
+                white-space: nowrap;
+            }
+            #pairsTable th[data-sort-key]:hover {
+                text-decoration: underline;
+            }
+            #pairsTable th .sort-arrow {
+                font-size: 0.7em;
+                margin-left: 4px;
+                opacity: 0.5;
+            }
+            #pairsTable th.sort-active .sort-arrow {
+                opacity: 1;
+            }
+            #chkSelectAll,
+            .pair-select,
+            .mapping-enabled {
+                width: 18px;
+                height: 18px;
+                cursor: pointer;
+                accent-color: #00a4dc;
+            }
+            .mapping-remove,
+            .forcelink-remove,
+            .ignore-remove {
+                cursor: pointer;
+                color: #d9534f;
+                background: none;
+                border: 1px solid #d9534f;
+                padding: 2px 6px;
+                border-radius: 3px;
+                white-space: nowrap;
+                font-size: 0.85em;
+            }
+            .mapping-remove:hover,
+            .forcelink-remove:hover,
+            .ignore-remove:hover {
+                background: rgba(217,83,79,0.15);
+            }
+            .pairs-menu-wrapper {
+                position: relative;
+                display: inline-block;
+            }
+            .pairs-menu-btn {
+                background: none;
+                border: 1px solid #555;
+                border-radius: 4px;
+                cursor: pointer;
+                font-size: 1.2em;
+                line-height: 1;
+                padding: 2px 8px;
+                color: inherit;
+            }
+            .pairs-menu-btn:hover {
+                background: rgba(255,255,255,0.1);
+            }
+            .pairs-menu-dropdown {
+                display: none;
+                position: absolute;
+                right: 0;
+                top: 100%;
+                background: #2c2c2c;
+                border: 1px solid #555;
+                border-radius: 4px;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+                z-index: 100;
+                min-width: 180px;
+                margin-top: 4px;
+            }
+            .pairs-menu-dropdown.open {
+                display: block;
+            }
+            .pairs-menu-dropdown button {
+                display: block;
+                width: 100%;
+                text-align: left;
+                background: none;
+                border: none;
+                color: #d9534f;
+                padding: 8px 14px;
+                cursor: pointer;
+                font-size: 0.9em;
+                white-space: nowrap;
+            }
+            .pairs-menu-dropdown button:hover {
+                background: rgba(255,255,255,0.08);
+            }
+            .pairs-menu-dropdown button:disabled {
+                color: #666;
+                cursor: default;
+            }
+            .pairs-menu-dropdown button:disabled:hover {
+                background: none;
+            }
+        </style>
 
         <div data-role="content">
             <div class="content-primary">
