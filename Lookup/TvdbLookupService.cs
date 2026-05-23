@@ -99,7 +99,8 @@ public class TvdbLookupService : IMetadataLookupService, IDisposable
             string.Equals(t.TagName, "Special Category", StringComparison.OrdinalIgnoreCase))?.Name;
 
         var isMovieTag = string.Equals(specialCategory, "Movies", StringComparison.OrdinalIgnoreCase);
-        var isOvaTag = string.Equals(specialCategory, "OVA", StringComparison.OrdinalIgnoreCase);
+        var isOvaTag = string.Equals(specialCategory, "OVA", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(specialCategory, "OVAs", StringComparison.OrdinalIgnoreCase);
 
         var allowOva = Plugin.Instance?.Configuration.AllowOvaLinking == true;
 
