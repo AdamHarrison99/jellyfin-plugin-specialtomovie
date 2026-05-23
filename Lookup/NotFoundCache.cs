@@ -28,13 +28,18 @@ public sealed class NotFoundCache : IDisposable
 
     public bool IsNotFound(string key, int cacheDays)
     {
-        if (_cache.TryGetValue(key, out var cachedTicks) &&
-            (DateTime.UtcNow.Ticks - cachedTicks) < TimeSpan.FromDays(cacheDays).Ticks)
+        if (!_cache.TryGetValue(key, out var cachedTicks))
+        {
+            return false;
+        }
+
+        // 0 = never retry (cached forever)
+        if (cacheDays <= 0)
         {
             return true;
         }
 
-        return false;
+        return (DateTime.UtcNow.Ticks - cachedTicks) < TimeSpan.FromDays(cacheDays).Ticks;
     }
 
     public void Add(string key)
@@ -87,7 +92,8 @@ public sealed class NotFoundCache : IDisposable
                 return;
             }
 
-            var maxAge = TimeSpan.FromDays(Math.Max(1, Plugin.Instance?.Configuration.NotFoundCacheDays ?? 14)).Ticks;
+            var cacheDays = Plugin.Instance?.Configuration.NotFoundCacheDays ?? 14;
+            var maxAge = cacheDays <= 0 ? long.MaxValue : TimeSpan.FromDays(cacheDays).Ticks;
             var now = DateTime.UtcNow.Ticks;
             int loaded = 0;
 
@@ -121,7 +127,8 @@ public sealed class NotFoundCache : IDisposable
         try
         {
             _dirty = false;
-            var maxAge = TimeSpan.FromDays(Math.Max(1, Plugin.Instance?.Configuration.NotFoundCacheDays ?? 14)).Ticks;
+            var cacheDays = Plugin.Instance?.Configuration.NotFoundCacheDays ?? 14;
+            var maxAge = cacheDays <= 0 ? long.MaxValue : TimeSpan.FromDays(cacheDays).Ticks;
             var now = DateTime.UtcNow.Ticks;
 
             var entries = new Dictionary<string, long>();

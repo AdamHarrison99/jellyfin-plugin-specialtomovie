@@ -269,7 +269,7 @@ public class TmdbLookupService : IMetadataLookupService, IDisposable
     private async Task<string?> SendWithRetryAsync(string url, CancellationToken cancellationToken)
     {
         var cacheKey = StripApiKey(url);
-        var cacheDays = Math.Max(1, Plugin.Instance?.Configuration.NotFoundCacheDays ?? 14);
+        var cacheDays = Plugin.Instance?.Configuration.NotFoundCacheDays ?? 14;
         if (_notFoundCache.IsNotFound(cacheKey, cacheDays))
         {
             _logger.LogDebug("TMDB cache hit (previous 404): {Path}", cacheKey);

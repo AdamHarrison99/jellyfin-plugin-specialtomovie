@@ -146,10 +146,11 @@
 
                         <div class="inputContainer" style="margin-top:16px;">
                             <label class="inputLabel inputLabelUnfocused" for="txtNotFoundCacheDays">API 404 cache duration (days)</label>
-                            <input id="txtNotFoundCacheDays" type="number" min="1" max="365" is="emby-input" />
+                            <input id="txtNotFoundCacheDays" type="number" min="0" max="365" is="emby-input" />
                             <div class="fieldDescription">
                                 How long to remember API endpoints that returned "not found" before retrying.
                                 Prevents repeated calls for episodes that don't exist on TMDB/TVDB.
+                                Set to 0 to never retry — cached 404s are permanent until the database is cleared.
                             </div>
                         </div>
 
@@ -329,7 +330,7 @@
                         page.querySelector('#selectPrimaryProvider').value = (pv === 1 || pv === 'Tvdb') ? 'Tvdb' : 'Tmdb';
                         page.querySelector('#txtTmdbApiKey').value = config.TmdbApiKey || '';
                         page.querySelector('#txtTvdbApiKey').value = config.TvdbApiKey || '';
-                        page.querySelector('#txtNotFoundCacheDays').value = config.NotFoundCacheDays || 14;
+                        page.querySelector('#txtNotFoundCacheDays').value = config.NotFoundCacheDays != null ? config.NotFoundCacheDays : 14;
 
                         SpecialToMovieConfig.updateDryRunBanner(config.DryRunMode);
                         SpecialToMovieConfig.updateTwoWayState(config.AutoDeleteOnRemoval);
@@ -357,7 +358,8 @@
                         config.PrimaryProvider = page.querySelector('#selectPrimaryProvider').value;
                         config.TmdbApiKey = page.querySelector('#txtTmdbApiKey').value.trim();
                         config.TvdbApiKey = page.querySelector('#txtTvdbApiKey').value.trim();
-                        config.NotFoundCacheDays = parseInt(page.querySelector('#txtNotFoundCacheDays').value, 10) || 14;
+                        var cacheDaysVal = parseInt(page.querySelector('#txtNotFoundCacheDays').value, 10);
+                        config.NotFoundCacheDays = isNaN(cacheDaysVal) ? 14 : cacheDaysVal;
 
                         config.LibraryMappings = SpecialToMovieConfig.collectLibraryMappings();
                         var newForceLinks = SpecialToMovieConfig.collectForceLinks();
