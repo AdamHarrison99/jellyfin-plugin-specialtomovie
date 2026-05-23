@@ -17,6 +17,7 @@ public class CleanupTask : IScheduledTask
     private readonly IPairStore _pairStore;
     private readonly IHardLinkService _hardLinkService;
     private readonly WatchSyncService _watchSyncService;
+    private readonly SpecialDetectionService _detectionService;
     private readonly ILogger<CleanupTask> _logger;
 
     public CleanupTask(
@@ -24,12 +25,14 @@ public class CleanupTask : IScheduledTask
         IPairStore pairStore,
         IHardLinkService hardLinkService,
         WatchSyncService watchSyncService,
+        SpecialDetectionService detectionService,
         ILogger<CleanupTask> logger)
     {
         _libraryManager = libraryManager;
         _pairStore = pairStore;
         _hardLinkService = hardLinkService;
         _watchSyncService = watchSyncService;
+        _detectionService = detectionService;
         _logger = logger;
     }
 
@@ -41,7 +44,7 @@ public class CleanupTask : IScheduledTask
 
     public string Category => "SpecialToMovie";
 
-    public Task ExecuteAsync(IProgress<double> progress, CancellationToken cancellationToken)
+    public async Task ExecuteAsync(IProgress<double> progress, CancellationToken cancellationToken)
     {
         _logger.LogInformation("Starting SpecialToMovie cleanup");
         progress.Report(0);
@@ -49,7 +52,7 @@ public class CleanupTask : IScheduledTask
         var config = Plugin.Instance?.Configuration;
         if (config == null)
         {
-            return Task.CompletedTask;
+            return;
         }
 
         var pairs = _pairStore.GetAll();
@@ -68,8 +71,8 @@ public class CleanupTask : IScheduledTask
             IncludeItemTypes = [BaseItemKind.Movie],
             Recursive = true
         }).Where(m => !string.IsNullOrEmpty(m.Path))
-         .GroupBy(m => m.Path, StringComparer.OrdinalIgnoreCase)
-         .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+            .GroupBy(m => m.Path, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
 
         for (int i = 0; i < total; i++)
         {
@@ -78,11 +81,16 @@ public class CleanupTask : IScheduledTask
             var pair = pairs[i];
             ValidatePair(pair, config.DryRunMode, config.AutoDeleteOnRemoval, allEpisodes, moviesByPath);
 
-            progress.Report((double)(i + 1) / total * 100);
+            progress.Report((double)(i + 1) / total * 80);
         }
 
+        _detectionService.EnforceIgnoreList();
+        progress.Report(90);
+
+        await _detectionService.ProcessForceLinksAsync(cancellationToken).ConfigureAwait(false);
+        progress.Report(100);
+
         _logger.LogInformation("SpecialToMovie cleanup finished, validated {Count} pairs", total);
-        return Task.CompletedTask;
     }
 
     public IEnumerable<TaskTriggerInfo> GetDefaultTriggers()

@@ -265,6 +265,10 @@ public class SpecialDetectionService
             progress?.Report((double)(i + 1) / total * 90);
         }
 
+        EnforceIgnoreList(snapshot, config.AutoDeleteOnRemoval);
+
+        await ProcessForceLinksAsync(snapshot, allMovies, virtualFolders, cancellationToken).ConfigureAwait(false);
+
         // Promote DryRun pairs if dry run was just disabled
         if (!config.DryRunMode)
         {
@@ -483,6 +487,143 @@ public class SpecialDetectionService
             Title = title,
             Year = year
         };
+    }
+
+    public void EnforceIgnoreList()
+    {
+        var config = Plugin.Instance?.Configuration;
+        if (config == null)
+        {
+            return;
+        }
+
+        EnforceIgnoreList(ConfigSnapshot.From(config), config.AutoDeleteOnRemoval);
+    }
+
+    private void EnforceIgnoreList(ConfigSnapshot snapshot, bool autoDelete)
+    {
+        var pairs = _pairStore.GetAll();
+        var removed = 0;
+
+        foreach (var pair in pairs)
+        {
+            var episode = _libraryManager.GetItemById(pair.EpisodeItemId) as Episode;
+            if (episode == null)
+            {
+                continue;
+            }
+
+            var episodeKey = FormatEpisodeKey(episode);
+            var isIgnored = snapshot.IgnoreList.Contains(episodeKey, StringComparer.OrdinalIgnoreCase) ||
+                            snapshot.IgnoreList.Contains(pair.EpisodeItemId.ToString(), StringComparer.OrdinalIgnoreCase);
+
+            if (!isIgnored)
+            {
+                continue;
+            }
+
+            if (autoDelete && !pair.IsExistingMovie)
+            {
+                DeleteLinkedMovieItem(pair.MovieItemId);
+            }
+
+            _pairStore.Remove(pair.Id);
+            removed++;
+            _logger.LogInformation("Removed pair for ignored episode {Key} (pair {PairId})", episodeKey, pair.Id);
+        }
+
+        if (removed > 0)
+        {
+            _logger.LogInformation("Ignore list enforcement removed {Count} pairs", removed);
+        }
+    }
+
+    public async Task ProcessForceLinksAsync(CancellationToken cancellationToken = default)
+    {
+        var config = Plugin.Instance?.Configuration;
+        if (config == null)
+        {
+            return;
+        }
+
+        var snapshot = ConfigSnapshot.From(config);
+        var allMovies = _libraryManager.GetItemList(new InternalItemsQuery
+        {
+            IncludeItemTypes = [BaseItemKind.Movie],
+            Recursive = true
+        });
+        var virtualFolders = _libraryManager.GetVirtualFolders();
+
+        await ProcessForceLinksAsync(snapshot, allMovies, virtualFolders, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task ProcessForceLinksAsync(ConfigSnapshot snapshot, IReadOnlyList<BaseItem> allMovies, IReadOnlyList<VirtualFolderInfo> virtualFolders, CancellationToken cancellationToken)
+    {
+        if (snapshot.ForceLinks.Count == 0)
+        {
+            return;
+        }
+
+        var allEpisodes = _libraryManager.GetItemList(new InternalItemsQuery
+        {
+            IncludeItemTypes = [BaseItemKind.Episode],
+            ParentIndexNumber = 0,
+            Recursive = true
+        });
+
+        var processed = 0;
+
+        foreach (var forceLink in snapshot.ForceLinks)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var episode = allEpisodes
+                .OfType<Episode>()
+                .FirstOrDefault(e => string.Equals(FormatEpisodeKey(e), forceLink.EpisodeKey, StringComparison.OrdinalIgnoreCase));
+
+            if (episode == null)
+            {
+                _logger.LogDebug("Force link episode not found: {Key}", forceLink.EpisodeKey);
+                continue;
+            }
+
+            if (_pairStore.ExistsForEpisode(episode.Id))
+            {
+                continue;
+            }
+
+            await ProcessEpisodeAsync(episode, snapshot, allMovies, virtualFolders, cancellationToken).ConfigureAwait(false);
+            processed++;
+        }
+
+        if (processed > 0)
+        {
+            _logger.LogInformation("Processed {Count} force links", processed);
+        }
+    }
+
+    private void DeleteLinkedMovieItem(Guid? itemId)
+    {
+        if (itemId == null || itemId == Guid.Empty)
+        {
+            return;
+        }
+
+        var item = _libraryManager.GetItemById(itemId.Value);
+        if (item == null)
+        {
+            return;
+        }
+
+        try
+        {
+            _libraryManager.DeleteItem(item, new DeleteOptions { DeleteFileLocation = true });
+            _logger.LogInformation("Deleted linked movie {Name} via Jellyfin", item.Name);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to delete linked movie item {Id}", itemId);
+        }
     }
 
     /// <summary>

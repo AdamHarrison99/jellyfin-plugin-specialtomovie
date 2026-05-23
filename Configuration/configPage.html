@@ -24,6 +24,68 @@
         #pairsTable th.sort-active .sort-arrow {
             opacity: 1;
         }
+        #chkSelectAll,
+        .pair-select {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+            accent-color: #00a4dc;
+        }
+        .pairs-menu-wrapper {
+            position: relative;
+            display: inline-block;
+        }
+        .pairs-menu-btn {
+            background: none;
+            border: 1px solid #555;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1.2em;
+            line-height: 1;
+            padding: 2px 8px;
+            color: inherit;
+        }
+        .pairs-menu-btn:hover {
+            background: rgba(255,255,255,0.1);
+        }
+        .pairs-menu-dropdown {
+            display: none;
+            position: absolute;
+            right: 0;
+            top: 100%;
+            background: #2c2c2c;
+            border: 1px solid #555;
+            border-radius: 4px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+            z-index: 100;
+            min-width: 180px;
+            margin-top: 4px;
+        }
+        .pairs-menu-dropdown.open {
+            display: block;
+        }
+        .pairs-menu-dropdown button {
+            display: block;
+            width: 100%;
+            text-align: left;
+            background: none;
+            border: none;
+            color: #d9534f;
+            padding: 8px 14px;
+            cursor: pointer;
+            font-size: 0.9em;
+            white-space: nowrap;
+        }
+        .pairs-menu-dropdown button:hover {
+            background: rgba(255,255,255,0.08);
+        }
+        .pairs-menu-dropdown button:disabled {
+            color: #666;
+            cursor: default;
+        }
+        .pairs-menu-dropdown button:disabled:hover {
+            background: none;
+        }
     </style>
 </head>
 <body>
@@ -164,9 +226,7 @@
                                 <span>Allow OVAs to link as movies</span>
                             </label>
                             <div class="fieldDescription">
-                                Some entries on TVDB are tagged as OVAs (Original Video Animations) rather than movies,
-                                even when they were released theatrically or as standalone films. Enable this to treat
-                                TVDB episodes with Special Category "OVA" the same as "Movies" for matching purposes.
+                                Allow entries from a source TV library tagged as OVAs (Original Video Animations) to be linked to your destination movie library.
                             </div>
                         </div>
 
@@ -274,24 +334,30 @@
                             <h2 class="sectionTitle" style="margin:0;">Linked Pairs</h2>
                             <span style="font-size:0.8em;color:#888;">Auto-refreshes every 10 seconds</span>
                         </div>
-                        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap;">
-                            <input id="pairsSearch" type="text" is="emby-input" placeholder="Search by title or path..."
-                                   style="flex:1;min-width:200px;" />
-                            <select id="pairsStatusFilter" is="emby-select" style="min-width:120px;">
-                                <option value="">All Statuses</option>
+                        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+                            <input id="pairsSearch" type="text" is="emby-input" placeholder="Search..."
+                                   style="flex:1;min-width:100px;" />
+                            <select id="pairsStatusFilter" is="emby-select" style="width:auto;min-width:0;">
+                                <option value="">Status</option>
                                 <option value="2">Active</option>
                                 <option value="0">Dry Run</option>
                                 <option value="3">Error</option>
                                 <option value="1">Pending</option>
                             </select>
-                            <select id="pairsLibraryFilter" is="emby-select" style="min-width:150px;">
-                                <option value="">All Libraries</option>
+                            <select id="pairsLibraryFilter" is="emby-select" style="width:auto;min-width:0;">
+                                <option value="">Library</option>
                             </select>
-                            <select id="pairsSourceFilter" is="emby-select" style="min-width:130px;">
-                                <option value="">All Sources</option>
-                                <option value="plugin">Plugin Created</option>
-                                <option value="existing">Pre Existing</option>
+                            <select id="pairsSourceFilter" is="emby-select" style="width:auto;min-width:0;">
+                                <option value="">Source</option>
+                                <option value="plugin">Plugin</option>
+                                <option value="existing">Existing</option>
                             </select>
+                            <div class="pairs-menu-wrapper">
+                                <button id="btnPairsMenu" type="button" class="pairs-menu-btn" title="Actions">&#8942;</button>
+                                <div id="pairsMenuDropdown" class="pairs-menu-dropdown">
+                                    <button id="btnRemoveSelected" type="button" disabled>Remove selected</button>
+                                </div>
+                            </div>
                         </div>
                         <div id="pairsControls" style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
                             <span id="pairsInfo" style="color:#888;"></span>
@@ -304,18 +370,19 @@
                             <table id="pairsTable" class="tblSortable" style="width:100%;border-collapse:collapse;table-layout:fixed;">
                                 <thead>
                                     <tr>
-                                        <th style="text-align:left;padding:8px;width:19%;" data-sort-key="episode">Episode <span class="sort-arrow"></span></th>
-                                        <th style="text-align:left;padding:8px;width:17%;" data-sort-key="movie">Movie <span class="sort-arrow"></span></th>
-                                        <th style="text-align:left;padding:8px;width:11%;" data-sort-key="library">Library <span class="sort-arrow"></span></th>
+                                        <th style="padding:8px;width:36px;text-align:center;"><input id="chkSelectAll" type="checkbox" title="Select all on this page" /></th>
+                                        <th style="text-align:left;padding:8px;width:20%;" data-sort-key="episode">Episode <span class="sort-arrow"></span></th>
+                                        <th style="text-align:left;padding:8px;width:18%;" data-sort-key="movie">Movie <span class="sort-arrow"></span></th>
+                                        <th style="text-align:left;padding:8px;width:12%;" data-sort-key="library">Library <span class="sort-arrow"></span></th>
                                         <th style="text-align:left;padding:8px;width:8%;">IDs</th>
                                         <th style="text-align:left;padding:8px;width:11%;" data-sort-key="source">Source <span class="sort-arrow"></span></th>
                                         <th style="text-align:left;padding:8px;width:11%;" data-sort-key="status">Status <span class="sort-arrow"></span></th>
                                         <th style="text-align:left;padding:8px;width:12%;" data-sort-key="created">Created <span class="sort-arrow"></span></th>
-                                        <th style="text-align:left;padding:8px;width:11%;"></th>
                                     </tr>
                                 </thead>
                                 <tbody id="pairsTableBody">
                                     <tr><td colspan="8" style="padding:8px;color:#888;">No linked pairs yet.</td></tr>
+
                                 </tbody>
                             </table>
                         </div>
@@ -627,6 +694,7 @@
                 pairsPerPage: 25,
                 sortKey: 'created',
                 sortAsc: false,
+                selectedPairIds: new Set(),
 
                 loadPairs: function () {
                     ApiClient.ajax({
@@ -635,9 +703,14 @@
                         dataType: 'json'
                     }).then(function (pairs) {
                         SpecialToMovieConfig.allPairs = pairs || [];
+                        var validIds = new Set(pairs.map(function (p) { return p.Id; }));
+                        SpecialToMovieConfig.selectedPairIds.forEach(function (id) {
+                            if (!validIds.has(id)) SpecialToMovieConfig.selectedPairIds.delete(id);
+                        });
                         SpecialToMovieConfig.renderPairsPage();
                     }, function () {
                         SpecialToMovieConfig.allPairs = [];
+                        SpecialToMovieConfig.selectedPairIds.clear();
                         SpecialToMovieConfig.renderPairsPage();
                     });
                 },
@@ -771,6 +844,24 @@
                         slice.forEach(function (pair) {
                             var tr = document.createElement('tr');
 
+                            var tdChk = document.createElement('td');
+                            tdChk.style.cssText = 'padding:8px;text-align:center;';
+                            var chk = document.createElement('input');
+                            chk.type = 'checkbox';
+                            chk.className = 'pair-select';
+                            chk.dataset.pairId = pair.Id;
+                            chk.checked = SpecialToMovieConfig.selectedPairIds.has(pair.Id);
+                            chk.addEventListener('change', function () {
+                                if (this.checked) {
+                                    SpecialToMovieConfig.selectedPairIds.add(pair.Id);
+                                } else {
+                                    SpecialToMovieConfig.selectedPairIds.delete(pair.Id);
+                                }
+                                SpecialToMovieConfig.updateSelectionUI();
+                            });
+                            tdChk.appendChild(chk);
+                            tr.appendChild(tdChk);
+
                             var tdEp = document.createElement('td');
                             tdEp.className = 'wrap-long';
                             tdEp.style.cssText = 'padding:8px;word-break:break-all;overflow-wrap:anywhere;max-width:0;';
@@ -894,31 +985,6 @@
                                 : '—';
                             tr.appendChild(tdCreated);
 
-                            var tdAction = document.createElement('td');
-                            tdAction.style.padding = '8px';
-                            var removeBtn = document.createElement('button');
-                            removeBtn.type = 'button';
-                            removeBtn.textContent = 'Remove';
-                            removeBtn.style.cssText = 'cursor:pointer;color:#d9534f;background:none;border:1px solid #d9534f;padding:2px 6px;border-radius:3px;white-space:nowrap;font-size:0.85em;';
-                            removeBtn.addEventListener('click', (function (pairId) {
-                                return function () {
-                                    if (!confirm('Remove this pair from the database?\n\nThe hard-linked movie file on disk (if exists) will NOT be deleted. Use "Remove All Hard Links" to clean up files.')) return;
-                                    ApiClient.ajax({
-                                        type: 'POST',
-                                        url: ApiClient.getUrl('SpecialToMovie/RemovePair'),
-                                        data: JSON.stringify({ PairId: pairId }),
-                                        contentType: 'application/json',
-                                        dataType: 'json'
-                                    }).then(function () {
-                                        SpecialToMovieConfig.loadPairs();
-                                    }, function () {
-                                        Dashboard.alert('Failed to remove pair.');
-                                    });
-                                };
-                            })(pair.Id));
-                            tdAction.appendChild(removeBtn);
-                            tr.appendChild(tdAction);
-
                             tbody.appendChild(tr);
                         });
                     }
@@ -928,6 +994,52 @@
 
                     document.getElementById('btnPairsPrev').disabled = (page <= 0);
                     document.getElementById('btnPairsNext').disabled = (page >= totalPages - 1);
+
+                    SpecialToMovieConfig.updateSelectionUI();
+                },
+
+                updateSelectionUI: function () {
+                    var checkboxes = document.querySelectorAll('.pair-select');
+                    var allChecked = checkboxes.length > 0;
+                    var anyChecked = false;
+                    checkboxes.forEach(function (chk) {
+                        if (chk.checked) anyChecked = true;
+                        else allChecked = false;
+                    });
+                    document.getElementById('chkSelectAll').checked = allChecked && checkboxes.length > 0;
+                    document.getElementById('btnRemoveSelected').disabled = !anyChecked;
+                },
+
+                removeSelectedPairs: function () {
+                    var ids = Array.from(SpecialToMovieConfig.selectedPairIds);
+                    if (ids.length === 0) return;
+                    var msg = 'Remove ' + ids.length + ' selected pair(s) from the database?\n\nHard-linked movie files on disk will NOT be deleted. Use "Remove All Hard Links" to clean up files.';
+                    if (!confirm(msg)) return;
+                    var remaining = ids.length;
+                    var failed = 0;
+                    ids.forEach(function (pairId) {
+                        ApiClient.ajax({
+                            type: 'POST',
+                            url: ApiClient.getUrl('SpecialToMovie/RemovePair'),
+                            data: JSON.stringify({ PairId: pairId }),
+                            contentType: 'application/json',
+                            dataType: 'json'
+                        }).then(function () {
+                            SpecialToMovieConfig.selectedPairIds.delete(pairId);
+                            remaining--;
+                            if (remaining === 0) {
+                                if (failed > 0) Dashboard.alert('Failed to remove ' + failed + ' pair(s).');
+                                SpecialToMovieConfig.loadPairs();
+                            }
+                        }, function () {
+                            failed++;
+                            remaining--;
+                            if (remaining === 0) {
+                                Dashboard.alert('Failed to remove ' + failed + ' pair(s).');
+                                SpecialToMovieConfig.loadPairs();
+                            }
+                        });
+                    });
                 },
 
                 sortByColumn: function (key) {
@@ -1175,6 +1287,37 @@
                             Dashboard.alert('Failed to clear database. Check the server log.');
                         });
                     }
+                });
+
+            document.getElementById('chkSelectAll')
+                .addEventListener('change', function () {
+                    var checked = this.checked;
+                    document.querySelectorAll('.pair-select').forEach(function (chk) {
+                        chk.checked = checked;
+                        if (checked) {
+                            SpecialToMovieConfig.selectedPairIds.add(chk.dataset.pairId);
+                        } else {
+                            SpecialToMovieConfig.selectedPairIds.delete(chk.dataset.pairId);
+                        }
+                    });
+                    SpecialToMovieConfig.updateSelectionUI();
+                });
+
+            document.getElementById('btnPairsMenu')
+                .addEventListener('click', function (e) {
+                    e.stopPropagation();
+                    var dropdown = document.getElementById('pairsMenuDropdown');
+                    dropdown.classList.toggle('open');
+                });
+
+            document.addEventListener('click', function () {
+                document.getElementById('pairsMenuDropdown').classList.remove('open');
+            });
+
+            document.getElementById('btnRemoveSelected')
+                .addEventListener('click', function () {
+                    document.getElementById('pairsMenuDropdown').classList.remove('open');
+                    SpecialToMovieConfig.removeSelectedPairs();
                 });
 
             document.querySelector('#btnRunScan')
