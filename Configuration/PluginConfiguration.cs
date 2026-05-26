@@ -42,7 +42,7 @@ public class PluginConfiguration : BasePluginConfiguration
 
     public List<string> IgnoreList { get; set; } = new();
 
-    public int CleanupIntervalHours { get; set; } = 12;
+    public int CleanupIntervalHours { get; set; } = 6;
 
     public bool AutoDeleteOnRemoval { get; set; } = false;
 

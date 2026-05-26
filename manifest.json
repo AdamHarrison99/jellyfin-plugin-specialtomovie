@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "1.0.12.0",
+        "changelog": "Add watch-status-only sync option to prevent Continue Watching duplicates. Enforce ignore list and process force links during full scan and cleanup. Checkbox multi-select with bulk remove for linked pairs. Rename Cleanup task to Sync & Maintenance. Default cleanup interval reduced to 6 hours. UI polish and label improvements.",
+        "targetAbi": "10.11.10.0",
+        "sourceUrl": "https://github.com/AdamHarrison99/jellyfin-plugin-specialtomovie/releases/download/v1.0.12/specialtomovie-v1.0.12.zip",
+        "checksum": "ef945ab58f83ab40304a9a6aff7337f1",
+        "timestamp": "2026-05-26T15:47:34Z"
+      },
+      {
         "version": "1.0.11.0",
         "changelog": "Replace per-row remove buttons with checkbox multi-select and bulk remove via three-dot menu. Full scan and cleanup now enforce ignore list (removing existing pairs) and process force links (creating missing pairs). Style UI buttons and checkboxes consistently.",
         "targetAbi": "10.11.9.0",

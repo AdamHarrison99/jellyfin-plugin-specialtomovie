@@ -325,7 +325,7 @@
                                 Run Full Scan
                             </button>
                             <button id="btnRunCleanup" is="emby-button" type="button" class="raised button-submit">
-                                Run Cleanup
+                                Run Sync &amp; Maintenance
                             </button>
                         </div>
                     </div>
@@ -1371,7 +1371,7 @@
                         type: 'POST',
                         url: ApiClient.getUrl('SpecialToMovie/RunCleanup')
                     }).then(function () {
-                        Dashboard.alert('Cleanup queued. Check Scheduled Tasks for progress.');
+                        Dashboard.alert('Sync & Maintenance queued. Check Scheduled Tasks for progress.');
                     }, function () {
                         Dashboard.alert('Failed to start cleanup. Check the server log.');
                     });
