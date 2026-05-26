@@ -48,6 +48,8 @@ public class PluginConfiguration : BasePluginConfiguration
 
     public bool TwoWayDeletion { get; set; } = false;
 
+    public bool WatchStatusOnly { get; set; } = false;
+
     public int MetadataCacheDays { get; set; } = 7;
 }
 

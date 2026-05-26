@@ -503,7 +503,7 @@ public class SpecialDetectionService
     private void EnforceIgnoreList(ConfigSnapshot snapshot, bool autoDelete)
     {
         var pairs = _pairStore.GetAll();
-        var removed = 0;
+        var toRemove = new List<Guid>();
 
         foreach (var pair in pairs)
         {
@@ -527,14 +527,14 @@ public class SpecialDetectionService
                 DeleteLinkedMovieItem(pair.MovieItemId);
             }
 
-            _pairStore.Remove(pair.Id);
-            removed++;
+            toRemove.Add(pair.Id);
             _logger.LogInformation("Removed pair for ignored episode {Key} (pair {PairId})", episodeKey, pair.Id);
         }
 
-        if (removed > 0)
+        if (toRemove.Count > 0)
         {
-            _logger.LogInformation("Ignore list enforcement removed {Count} pairs", removed);
+            _pairStore.RemoveMany(toRemove);
+            _logger.LogInformation("Ignore list enforcement removed {Count} pairs", toRemove.Count);
         }
     }
 

@@ -148,6 +148,18 @@
                             </div>
                         </div>
 
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label class="emby-checkbox-label">
+                                <input id="chkWatchStatusOnly" type="checkbox" is="emby-checkbox" />
+                                <span>Only sync watched/unwatched status</span>
+                            </label>
+                            <div class="fieldDescription">
+                                Prevents duplicate Continue Watching entries by only syncing watched/unwatched status.
+                                Playback progress will not carry over between linked items.
+                                Disable to sync full playback progress.
+                            </div>
+                        </div>
+
                     </div>
 
                     <!-- Deletion Behavior -->
@@ -157,7 +169,7 @@
                         <div class="checkboxContainer checkboxContainer-withDescription">
                             <label class="emby-checkbox-label">
                                 <input id="chkAutoDelete" type="checkbox" is="emby-checkbox" />
-                                <span>Remove plugin managed linked items when an item is deleted</span>
+                                <span>Remove plugin managed items automatically</span>
                             </label>
                             <div class="fieldDescription">
                                 When a TV special is removed, its (plugin managed) linked movie is also deleted via Jellyfin
@@ -241,21 +253,21 @@
 
                         <div class="checkboxContainer checkboxContainer-withDescription" style="margin-top:16px;">
                             <label class="emby-checkbox-label">
-                                <input id="chkAllowOva" type="checkbox" is="emby-checkbox" />
-                                <span>Allow OVAs to link as movies</span>
-                            </label>
-                            <div class="fieldDescription">
-                                Allow entries from a source TV library tagged as OVAs (Original Video Animations) to be linked to your destination movie library.
-                            </div>
-                        </div>
-
-                        <div class="checkboxContainer checkboxContainer-withDescription" style="margin-top:16px;">
-                            <label class="emby-checkbox-label">
                                 <input id="chkDualConfirmation" type="checkbox" is="emby-checkbox" />
                                 <span>Require two or more metadata providers to agree before linking</span>
                             </label>
                             <div class="fieldDescription">
                                 Improves accuracy by reducing false matches, but movies only listed on a single provider will be skipped.
+                            </div>
+                        </div>
+
+                        <div class="checkboxContainer checkboxContainer-withDescription" style="margin-top:16px;">
+                            <label class="emby-checkbox-label">
+                                <input id="chkAllowOva" type="checkbox" is="emby-checkbox" />
+                                <span>Allow OVAs to link as movies</span>
+                            </label>
+                            <div class="fieldDescription">
+                                Allow entries from a source TV library tagged as OVAs (Original Video Animations) to be linked to your destination movie library.
                             </div>
                         </div>
                     </div>
@@ -429,6 +441,7 @@
                         page.querySelector('#chkDualConfirmation').checked = config.RequireDualConfirmation;
                         page.querySelector('#chkAutoDelete').checked = config.AutoDeleteOnRemoval;
                         page.querySelector('#chkTwoWayDeletion').checked = config.TwoWayDeletion;
+                        page.querySelector('#chkWatchStatusOnly').checked = config.WatchStatusOnly;
                         var pv = config.PrimaryProvider;
                         page.querySelector('#selectPrimaryProvider').value = (pv === 1 || pv === 'Tvdb') ? 'Tvdb' : 'Tmdb';
                         page.querySelector('#txtTmdbApiKey').value = config.TmdbApiKey || '';
@@ -459,6 +472,7 @@
                         config.RequireDualConfirmation = page.querySelector('#chkDualConfirmation').checked;
                         config.AutoDeleteOnRemoval = page.querySelector('#chkAutoDelete').checked;
                         config.TwoWayDeletion = page.querySelector('#chkTwoWayDeletion').checked;
+                        config.WatchStatusOnly = page.querySelector('#chkWatchStatusOnly').checked;
                         config.PrimaryProvider = page.querySelector('#selectPrimaryProvider').value;
                         config.TmdbApiKey = page.querySelector('#txtTmdbApiKey').value.trim();
                         config.TvdbApiKey = page.querySelector('#txtTvdbApiKey').value.trim();

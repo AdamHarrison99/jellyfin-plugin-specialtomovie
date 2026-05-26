@@ -95,10 +95,13 @@ public class WatchSyncService : IHostedService, IDisposable
                 }
 
                 target.Played = source.Played;
-                target.PlaybackPositionTicks = source.PlaybackPositionTicks;
                 target.PlayCount = source.PlayCount;
-                target.LastPlayedDate = source.LastPlayedDate;
                 target.IsFavorite = source.IsFavorite;
+                if (!config.WatchStatusOnly)
+                {
+                    target.PlaybackPositionTicks = source.PlaybackPositionTicks;
+                    target.LastPlayedDate = source.LastPlayedDate;
+                }
 
                 // Guard against reentrancy from the save event
                 var guardKey = $"{user.Id}:{targetItem.Id}";
@@ -216,10 +219,13 @@ public class WatchSyncService : IHostedService, IDisposable
             }
 
             pairedUserData.Played = userData.Played;
-            pairedUserData.PlaybackPositionTicks = userData.PlaybackPositionTicks;
             pairedUserData.PlayCount = userData.PlayCount;
-            pairedUserData.LastPlayedDate = userData.LastPlayedDate;
             pairedUserData.IsFavorite = userData.IsFavorite;
+            if (!config.WatchStatusOnly)
+            {
+                pairedUserData.PlaybackPositionTicks = userData.PlaybackPositionTicks;
+                pairedUserData.LastPlayedDate = userData.LastPlayedDate;
+            }
 
             _userDataManager.SaveUserData(
                 user,
