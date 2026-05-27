@@ -87,8 +87,41 @@ public class SpecialDetectionService
             string.Equals(f.EpisodeKey, episodeIdStr, StringComparison.OrdinalIgnoreCase));
         if (forceLink != null)
         {
-            match = ParseForcedMovie(forceLink.MovieTitle);
             _logger.LogInformation("Using force link for {Key}: {Movie}", episodeKey, forceLink.MovieTitle);
+
+            // Right side is a Jellyfin item ID — link directly to that movie
+            if (Guid.TryParse(forceLink.MovieTitle.Trim(), out var movieItemId))
+            {
+                var movieItem = _libraryManager.GetItemById(movieItemId);
+                if (movieItem != null)
+                {
+                    var directPair = new LinkedPair
+                    {
+                        Id = Guid.NewGuid(),
+                        EpisodeItemId = episode.Id,
+                        MovieItemId = movieItem.Id,
+                        SourceLibraryId = mapping.SourceLibraryId,
+                        DestinationLibraryId = mapping.DestinationLibraryId,
+                        EpisodePath = episode.Path,
+                        IsExistingMovie = true,
+                        MovieTitle = movieItem.Name ?? string.Empty,
+                        MovieYear = movieItem.ProductionYear,
+                        Status = PairStatus.Active
+                    };
+
+                    _pairStore.Upsert(directPair);
+                    _watchSyncService.SyncInitialWatchState(directPair);
+                    _logger.LogInformation(
+                        "Force link: paired {Key} directly to movie item {MovieName} ({MovieId})",
+                        episodeKey, movieItem.Name, movieItemId);
+                    return;
+                }
+
+                _logger.LogWarning("Force link: movie item {Id} not found in library", movieItemId);
+                return;
+            }
+
+            match = ParseForcedMovie(forceLink.MovieTitle);
 
             BaseItem? existingForced = null;
             if (match != null)

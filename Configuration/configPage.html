@@ -299,9 +299,9 @@
                             Manually specify episode-to-movie mappings.
                         </div>
                         <div style="display:flex;gap:10px;align-items:center;">
-                            <span style="flex:1;font-weight:bold;font-size:0.9em;">Episode: "SeriesName S00E##" or Item ID</span>
+                            <span style="flex:1;font-weight:bold;font-size:0.9em;">Episode: "SeriesName S00E##" or Jellyfin Item ID</span>
                             <span>&rarr;</span>
-                            <span style="flex:1;font-weight:bold;font-size:0.9em;">Movie: "Title (Year)", "tt[ID]" (IMDB), "tmdb:[ID]" (TMDB), or "tvdb:[ID]" (TVDB)</span>
+                            <span style="flex:1;font-weight:bold;font-size:0.9em;">Movie: "Title (Year)", "tt[ID]" (IMDB), "tmdb:[Movie ID]", "tvdb:[Movie ID]" or Jellyfin Item ID</span>
                             <button type="button" style="visibility:hidden;">Remove</button>
                         </div>
                         <div id="forceLinksContainer"></div>
@@ -642,7 +642,7 @@
                     var epInput = document.createElement('input');
                     epInput.type = 'text';
                     epInput.className = 'forcelink-episode emby-input';
-                    epInput.placeholder = 'SeriesName S00E## or Item ID';
+                    epInput.placeholder = 'Episode';
                     epInput.value = episode || '';
                     epInput.style.flex = '1';
                     row.appendChild(epInput);
@@ -654,7 +654,7 @@
                     var mvInput = document.createElement('input');
                     mvInput.type = 'text';
                     mvInput.className = 'forcelink-movie emby-input';
-                    mvInput.placeholder = 'Title (Year), tt1234567, tmdb:ID, tvdb:ID';
+                    mvInput.placeholder = 'Movie';
                     mvInput.value = movie || '';
                     mvInput.style.flex = '1';
                     row.appendChild(mvInput);
@@ -699,7 +699,7 @@
                     var input = document.createElement('input');
                     input.type = 'text';
                     input.className = 'ignore-value emby-input';
-                    input.placeholder = 'SeriesName S00E## or Item ID';
+                    input.placeholder = 'Episode';
                     input.value = value || '';
                     input.style.flex = '1';
                     row.appendChild(input);
