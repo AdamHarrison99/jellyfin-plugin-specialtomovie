@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "1.0.13.0",
+        "changelog": "Force links now accept Jellyfin item IDs (left side) and IMDB/TMDB/TVDB provider IDs (right side). Force links check for pre-existing movies before creating hard links. Rename Cleanup to Sync & Maintenance. Default cleanup interval reduced to 6 hours. UI layout improvements for force link descriptions.",
+        "targetAbi": "10.11.10.0",
+        "sourceUrl": "https://github.com/AdamHarrison99/jellyfin-plugin-specialtomovie/releases/download/v1.0.13/specialtomovie-v1.0.13.zip",
+        "checksum": "ed7f485f054229fae71ea444dd793379",
+        "timestamp": "2026-05-27T17:11:16Z"
+      },
+      {
         "version": "1.0.12.0",
         "changelog": "Add watch-status-only sync option to prevent Continue Watching duplicates. Enforce ignore list and process force links during full scan and cleanup. Checkbox multi-select with bulk remove for linked pairs. Rename Cleanup task to Sync & Maintenance. Default cleanup interval reduced to 6 hours. UI polish and label improvements.",
         "targetAbi": "10.11.10.0",

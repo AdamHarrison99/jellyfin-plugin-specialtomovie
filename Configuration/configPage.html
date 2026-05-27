@@ -296,7 +296,13 @@
                     <div class="verticalSection">
                         <h2 class="sectionTitle">Force Links</h2>
                         <div class="fieldDescription">
-                            Manually specify episode-to-movie mappings. Format: "SeriesName S00E##" &rarr; "Movie Title (Year)"
+                            Manually specify episode-to-movie mappings.
+                        </div>
+                        <div style="display:flex;gap:10px;align-items:center;">
+                            <span style="flex:1;font-weight:bold;font-size:0.9em;">Episode: "SeriesName S00E##" or Item ID</span>
+                            <span>&rarr;</span>
+                            <span style="flex:1;font-weight:bold;font-size:0.9em;">Movie: "Title (Year)", "tt[ID]" (IMDB), "tmdb:[ID]" (TMDB), or "tvdb:[ID]" (TVDB)</span>
+                            <button type="button" style="visibility:hidden;">Remove</button>
                         </div>
                         <div id="forceLinksContainer"></div>
                         <button id="btnAddForceLink" is="emby-button" type="button" class="raised">
@@ -636,7 +642,7 @@
                     var epInput = document.createElement('input');
                     epInput.type = 'text';
                     epInput.className = 'forcelink-episode emby-input';
-                    epInput.placeholder = 'SeriesName S00E##';
+                    epInput.placeholder = 'SeriesName S00E## or Item ID';
                     epInput.value = episode || '';
                     epInput.style.flex = '1';
                     row.appendChild(epInput);
@@ -648,7 +654,7 @@
                     var mvInput = document.createElement('input');
                     mvInput.type = 'text';
                     mvInput.className = 'forcelink-movie emby-input';
-                    mvInput.placeholder = 'Movie Title (Year)';
+                    mvInput.placeholder = 'Title (Year), tt1234567, tmdb:ID, tvdb:ID';
                     mvInput.value = movie || '';
                     mvInput.style.flex = '1';
                     row.appendChild(mvInput);

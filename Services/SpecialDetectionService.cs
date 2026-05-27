@@ -81,12 +81,49 @@ public class SpecialDetectionService
 
         // Check force links first
         MovieMatch? match = null;
+        var episodeIdStr = episode.Id.ToString();
         var forceLink = snapshot.ForceLinks.FirstOrDefault(f =>
-            string.Equals(f.EpisodeKey, episodeKey, StringComparison.OrdinalIgnoreCase));
+            string.Equals(f.EpisodeKey, episodeKey, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(f.EpisodeKey, episodeIdStr, StringComparison.OrdinalIgnoreCase));
         if (forceLink != null)
         {
             match = ParseForcedMovie(forceLink.MovieTitle);
             _logger.LogInformation("Using force link for {Key}: {Movie}", episodeKey, forceLink.MovieTitle);
+
+            BaseItem? existingForced = null;
+            if (match != null)
+            {
+                var hasProviderIds = !string.IsNullOrEmpty(match.TmdbMovieId) ||
+                                     !string.IsNullOrEmpty(match.TvdbMovieId) ||
+                                     !string.IsNullOrEmpty(match.ImdbId);
+                existingForced = hasProviderIds
+                    ? FindExistingMovie(mapping.DestinationLibraryId, match, allMovies, virtualFolders)
+                    : FindExistingMovieByTitle(mapping.DestinationLibraryId, match, allMovies, virtualFolders);
+            }
+            if (existingForced != null)
+            {
+                _logger.LogInformation(
+                    "Force link: existing movie found for {Key}: {MovieName} — paired without hard link",
+                    episodeKey, existingForced.Name);
+
+                var existingPair = new LinkedPair
+                {
+                    Id = Guid.NewGuid(),
+                    EpisodeItemId = episode.Id,
+                    MovieItemId = existingForced.Id,
+                    SourceLibraryId = mapping.SourceLibraryId,
+                    DestinationLibraryId = mapping.DestinationLibraryId,
+                    EpisodePath = episode.Path,
+                    IsExistingMovie = true,
+                    MovieTitle = match!.Title,
+                    MovieYear = match.Year,
+                    Status = PairStatus.Active
+                };
+
+                _pairStore.Upsert(existingPair);
+                _watchSyncService.SyncInitialWatchState(existingPair);
+                return;
+            }
         }
 
         match ??= await _lookupService.LookupAsync(episode, cancellationToken).ConfigureAwait(false);
@@ -397,6 +434,37 @@ public class SpecialDetectionService
              m.GetProviderId(MetadataProvider.Imdb) == match.ImdbId));
     }
 
+    private static BaseItem? FindExistingMovieByTitle(Guid destinationLibraryId, MovieMatch match, IReadOnlyList<BaseItem>? cachedMovies, IReadOnlyList<VirtualFolderInfo>? virtualFolders)
+    {
+        if (string.IsNullOrEmpty(match.Title))
+        {
+            return null;
+        }
+
+        IEnumerable<BaseItem> movies;
+
+        if (cachedMovies != null && virtualFolders != null)
+        {
+            var destFolder = virtualFolders.FirstOrDefault(f =>
+                Guid.TryParse(f.ItemId, out var id) && id == destinationLibraryId);
+            var destLocations = destFolder?.Locations ?? [];
+
+            movies = cachedMovies.Where(m =>
+                !string.IsNullOrEmpty(m.Path) &&
+                destLocations.Any(loc =>
+                    !string.IsNullOrEmpty(loc) &&
+                    m.Path.StartsWith(loc, StringComparison.OrdinalIgnoreCase)));
+        }
+        else
+        {
+            return null;
+        }
+
+        return movies.FirstOrDefault(m =>
+            string.Equals(m.Name, match.Title, StringComparison.OrdinalIgnoreCase) &&
+            (!match.Year.HasValue || m.ProductionYear == match.Year));
+    }
+
     private static string? ResolveDestinationPath(LibraryMapping mapping, IReadOnlyList<VirtualFolderInfo> folders)
     {
         if (!string.IsNullOrEmpty(mapping.DestinationPath))
@@ -455,13 +523,40 @@ public class SpecialDetectionService
 
     private static MovieMatch? ParseForcedMovie(string value)
     {
-        // Expected format: "Movie Title (Year)"
         var trimmed = value.Trim();
-        if (trimmed.Length > 500)
+        if (string.IsNullOrEmpty(trimmed) || trimmed.Length > 500)
         {
             return null;
         }
 
+        // IMDB ID: tt followed by digits
+        if (trimmed.StartsWith("tt", StringComparison.OrdinalIgnoreCase) &&
+            trimmed.Length > 2 && trimmed[2..].All(char.IsDigit))
+        {
+            return new MovieMatch { ImdbId = trimmed };
+        }
+
+        // TMDB ID: tmdb: prefix
+        if (trimmed.StartsWith("tmdb:", StringComparison.OrdinalIgnoreCase))
+        {
+            var id = trimmed[5..].Trim();
+            if (id.Length > 0 && id.All(char.IsDigit))
+            {
+                return new MovieMatch { TmdbMovieId = id };
+            }
+        }
+
+        // TVDB ID: tvdb: prefix
+        if (trimmed.StartsWith("tvdb:", StringComparison.OrdinalIgnoreCase))
+        {
+            var id = trimmed[5..].Trim();
+            if (id.Length > 0 && id.All(char.IsDigit))
+            {
+                return new MovieMatch { TvdbMovieId = id };
+            }
+        }
+
+        // Movie Title (Year)
         int? year = null;
         var title = trimmed;
 
@@ -469,16 +564,14 @@ public class SpecialDetectionService
         if (lastParen > 0 && trimmed.EndsWith(')'))
         {
             var length = trimmed.Length - lastParen - 2;
-            if (length <= 0)
+            if (length > 0)
             {
-                return new MovieMatch { Title = title, Year = year };
-            }
-
-            var yearStr = trimmed.Substring(lastParen + 1, length);
-            if (int.TryParse(yearStr, out var parsedYear))
-            {
-                year = parsedYear;
-                title = trimmed[..lastParen].TrimEnd();
+                var yearStr = trimmed.Substring(lastParen + 1, length);
+                if (int.TryParse(yearStr, out var parsedYear))
+                {
+                    year = parsedYear;
+                    title = trimmed[..lastParen].TrimEnd();
+                }
             }
         }
 
@@ -577,7 +670,13 @@ public class SpecialDetectionService
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var episode = allEpisodes
+            Episode? episode = null;
+            if (Guid.TryParse(forceLink.EpisodeKey, out var forcedEpId))
+            {
+                episode = allEpisodes.OfType<Episode>().FirstOrDefault(e => e.Id == forcedEpId);
+            }
+
+            episode ??= allEpisodes
                 .OfType<Episode>()
                 .FirstOrDefault(e => string.Equals(FormatEpisodeKey(e), forceLink.EpisodeKey, StringComparison.OrdinalIgnoreCase));
 
