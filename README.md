@@ -118,14 +118,16 @@ Scans all Season 0 episodes across your configured library mappings and looks up
 - Episodes added while the plugin was stopped or Jellyfin was restarting
 - Previously failed lookups that may now succeed (new data on TMDB/TVDB)
 - DryRun pairs that need promotion after dry run mode is disabled
+- Enforces the ignore list and processes force links
+- Re-syncs watch state for all active pairs
 
-Also re-syncs watch state for all active pairs, catching any drift that occurred while the plugin was inactive.
-
-### Cleanup (defaults to every 12 hours)
+### Sync & Maintenance (defaults to every 6 hours)
 
 Validates all existing pairs and repairs inconsistencies:
 
 - Removes pairs whose source episode no longer exists in Jellyfin
+- Enforces the ignore list and removes pairs for ignored episodes
+- Processes force links and creates missing pairs
 - Recreates hard links that were manually deleted from disk
 - Promotes Pending pairs to Active once Jellyfin finishes scanning the movie
 - Retries Error pairs if the underlying issue has been resolved
