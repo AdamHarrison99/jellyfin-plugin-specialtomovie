@@ -153,6 +153,12 @@ Both the episode and linked movie are independent Jellyfin items, so both may ap
 
 See [#1](https://github.com/AdamHarrison99/jellyfin-plugin-specialtomovie/issues/1) for details.
 
+### Orphaned hard links when auto delete is enabled
+
+If a TV show/special is removed and re-added before the plugin can detect the change (e.g., swapping a DVD rip for a Blu-ray release), old hard link files may remain on disk.
+
+**To clean up:** Click **Remove All Hard Links** on the config page and re-run a full scan, or manually delete the old movie folders from your destination library.
+
 ## FAQ
 
 **Q: Does this use extra disk space?**
