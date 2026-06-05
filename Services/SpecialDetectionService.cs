@@ -259,11 +259,18 @@ public class SpecialDetectionService
             return;
         }
 
-        // Write NFO if the destination library uses NFO metadata
         var movieFolderPath = Path.GetDirectoryName(linkPath);
+
+        // Write NFO if the destination library uses NFO metadata
         if (!string.IsNullOrEmpty(movieFolderPath) && ShouldWriteNfo(mapping.DestinationLibraryId, virtualFolders))
         {
             _hardLinkService.WriteNfoFile(movieFolderPath, match.Title, match.Year, match);
+        }
+
+        // Hard link subtitle files from the episode directory
+        if (!string.IsNullOrEmpty(movieFolderPath))
+        {
+            _hardLinkService.LinkSubtitles(episode.Path, movieFolderPath, match.Title, match.Year);
         }
 
         var pair = new LinkedPair

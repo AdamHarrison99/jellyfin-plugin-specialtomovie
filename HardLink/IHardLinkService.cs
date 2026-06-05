@@ -15,4 +15,8 @@ public interface IHardLinkService
     string BuildHardLinkPath(string destinationLibraryPath, string movieTitle, int? year, string sourceExtension);
 
     void WriteNfoFile(string movieFolderPath, string movieTitle, int? year, MovieMatch match);
+
+    void LinkSubtitles(string episodePath, string movieFolderPath, string movieTitle, int? year);
+
+    void SyncSubtitles(string episodePath, string hardLinkPath, string movieTitle, int? year);
 }

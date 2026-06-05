@@ -181,6 +181,189 @@ public partial class HardLinkService : IHardLinkService
         _logger.LogInformation("Wrote NFO metadata: {Path}", nfoPath);
     }
 
+    private static readonly HashSet<string> SubtitleExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".srt", ".ass", ".ssa", ".sub", ".idx", ".vtt", ".sup", ".pgs"
+    };
+
+    private static readonly string[] SubtitleSubfolderNames = ["Subs", "Subtitles"];
+
+    public void LinkSubtitles(string episodePath, string movieFolderPath, string movieTitle, int? year)
+    {
+        var episodeDir = Path.GetDirectoryName(episodePath);
+        if (string.IsNullOrEmpty(episodeDir) || !Directory.Exists(episodeDir))
+        {
+            return;
+        }
+
+        var episodeBaseName = Path.GetFileNameWithoutExtension(episodePath);
+        var sanitized = SanitizeFileName(movieTitle);
+        var yearSuffix = year.HasValue ? $" ({year.Value})" : string.Empty;
+        var movieBaseName = $"{sanitized}{yearSuffix}";
+
+        LinkSubtitlesFromDir(episodeDir, episodeBaseName, movieFolderPath, movieBaseName, null);
+
+        foreach (var subDir in SubtitleSubfolderNames)
+        {
+            var subPath = Path.Combine(episodeDir, subDir);
+            if (Directory.Exists(subPath))
+            {
+                var destSubPath = Path.Combine(movieFolderPath, subDir);
+                LinkSubtitlesFromDir(subPath, episodeBaseName, destSubPath, movieBaseName, subDir);
+            }
+        }
+    }
+
+    public void SyncSubtitles(string episodePath, string hardLinkPath, string movieTitle, int? year)
+    {
+        var episodeDir = Path.GetDirectoryName(episodePath);
+        var movieDir = Path.GetDirectoryName(hardLinkPath);
+        if (string.IsNullOrEmpty(episodeDir) || string.IsNullOrEmpty(movieDir))
+        {
+            return;
+        }
+
+        var episodeHasSubs = HasSubtitles(episodeDir);
+        var movieHasSubs = HasSubtitles(movieDir);
+
+        if (episodeHasSubs && movieHasSubs)
+        {
+            return;
+        }
+
+        if (!episodeHasSubs && !movieHasSubs)
+        {
+            return;
+        }
+
+        var episodeBaseName = Path.GetFileNameWithoutExtension(episodePath);
+        var sanitized = SanitizeFileName(movieTitle);
+        var yearSuffix = year.HasValue ? $" ({year.Value})" : string.Empty;
+        var movieBaseName = $"{sanitized}{yearSuffix}";
+
+        if (episodeHasSubs)
+        {
+            SyncSubtitlesOneWay(episodeDir, episodeBaseName, movieDir, movieBaseName);
+            foreach (var subDir in SubtitleSubfolderNames)
+            {
+                var epSub = Path.Combine(episodeDir, subDir);
+                if (Directory.Exists(epSub))
+                {
+                    SyncSubtitlesOneWay(epSub, episodeBaseName, Path.Combine(movieDir, subDir), movieBaseName);
+                }
+            }
+        }
+        else
+        {
+            SyncSubtitlesOneWay(movieDir, movieBaseName, episodeDir, episodeBaseName);
+            foreach (var subDir in SubtitleSubfolderNames)
+            {
+                var mvSub = Path.Combine(movieDir, subDir);
+                if (Directory.Exists(mvSub))
+                {
+                    SyncSubtitlesOneWay(mvSub, movieBaseName, Path.Combine(episodeDir, subDir), episodeBaseName);
+                }
+            }
+        }
+    }
+
+    private bool HasSubtitles(string directory)
+    {
+        if (!Directory.Exists(directory))
+        {
+            return false;
+        }
+
+        if (Directory.EnumerateFiles(directory).Any(f => SubtitleExtensions.Contains(Path.GetExtension(f))))
+        {
+            return true;
+        }
+
+        foreach (var subDir in SubtitleSubfolderNames)
+        {
+            var subPath = Path.Combine(directory, subDir);
+            if (Directory.Exists(subPath) &&
+                Directory.EnumerateFiles(subPath).Any(f => SubtitleExtensions.Contains(Path.GetExtension(f))))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private void LinkSubtitlesFromDir(string sourceDir, string sourceBaseName, string destDir, string destBaseName, string? subfolderName)
+    {
+        foreach (var file in Directory.EnumerateFiles(sourceDir))
+        {
+            var fileName = Path.GetFileName(file);
+            if (!fileName.StartsWith(sourceBaseName, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var ext = Path.GetExtension(fileName);
+            if (!SubtitleExtensions.Contains(ext))
+            {
+                continue;
+            }
+
+            var suffix = fileName[sourceBaseName.Length..];
+            var linkPath = Path.Combine(destDir, destBaseName + suffix);
+
+            if (File.Exists(linkPath))
+            {
+                continue;
+            }
+
+            Directory.CreateDirectory(destDir);
+
+            if (Create(file, linkPath))
+            {
+                _logger.LogInformation("Linked subtitle{Sub}: {Source} -> {Link}",
+                    subfolderName != null ? $" ({subfolderName})" : string.Empty, fileName, linkPath);
+            }
+        }
+    }
+
+    private void SyncSubtitlesOneWay(string sourceDir, string sourceBaseName, string destDir, string destBaseName)
+    {
+        if (!Directory.Exists(sourceDir))
+        {
+            return;
+        }
+
+        foreach (var file in Directory.EnumerateFiles(sourceDir))
+        {
+            var fileName = Path.GetFileName(file);
+            if (!fileName.StartsWith(sourceBaseName, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var ext = Path.GetExtension(fileName);
+            if (!SubtitleExtensions.Contains(ext))
+            {
+                continue;
+            }
+
+            var suffix = fileName[sourceBaseName.Length..];
+            var linkPath = Path.Combine(destDir, destBaseName + suffix);
+
+            if (File.Exists(linkPath))
+            {
+                continue;
+            }
+
+            Directory.CreateDirectory(destDir);
+
+            if (Create(file, linkPath))
+            {
+                _logger.LogInformation("Synced subtitle: {Source} -> {Link}", file, linkPath);
+            }
+        }
+    }
+
     private static string ToExtendedLengthPath(string path)
     {
         if (path.StartsWith(@"\\?\", StringComparison.Ordinal))

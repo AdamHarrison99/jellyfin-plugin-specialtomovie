@@ -183,6 +183,13 @@ public class CleanupTask : IScheduledTask
                 }
             }
         }
+
+        // Sync subtitles bidirectionally for active pairs with hard links
+        if (pair.Status == PairStatus.Active && !pair.IsExistingMovie &&
+            !string.IsNullOrEmpty(pair.HardLinkPath) && episode != null)
+        {
+            _hardLinkService.SyncSubtitles(episode.Path, pair.HardLinkPath, pair.MovieTitle, pair.MovieYear);
+        }
     }
 
     private static BaseItem? FindMovieAtPath(string? hardLinkPath, Dictionary<string, BaseItem> moviesByPath)
