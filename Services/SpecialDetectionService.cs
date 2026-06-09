@@ -268,9 +268,10 @@ public class SpecialDetectionService
         }
 
         // Hard link subtitle files from the episode directory
+        List<LinkedSubtitle>? linkedSubs = null;
         if (!string.IsNullOrEmpty(movieFolderPath))
         {
-            _hardLinkService.LinkSubtitles(episode.Path, movieFolderPath, match.Title, match.Year);
+            linkedSubs = _hardLinkService.LinkSubtitles(episode.Path, movieFolderPath, match.Title, match.Year);
         }
 
         var pair = new LinkedPair
@@ -287,6 +288,7 @@ public class SpecialDetectionService
             TvdbMovieId = match.TvdbMovieId,
                 TvdbMovieSlug = match.TvdbMovieSlug,
             ImdbId = match.ImdbId,
+            LinkedSubtitles = linkedSubs ?? new List<LinkedSubtitle>(),
             Status = PairStatus.Pending
         };
 

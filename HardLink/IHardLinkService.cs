@@ -16,7 +16,29 @@ public interface IHardLinkService
 
     void WriteNfoFile(string movieFolderPath, string movieTitle, int? year, MovieMatch match);
 
-    void LinkSubtitles(string episodePath, string movieFolderPath, string movieTitle, int? year);
+    List<LinkedSubtitle> LinkSubtitles(string episodePath, string movieFolderPath, string movieTitle, int? year);
 
-    void SyncSubtitles(string episodePath, string hardLinkPath, string movieTitle, int? year);
+    SubtitleSyncResult SyncSubtitles(string episodePath, string hardLinkPath, string movieTitle, int? year, List<LinkedSubtitle> existing);
+}
+
+/// <summary>
+/// Outcome of a bidirectional subtitle sync. <see cref="Records"/> are the tracked links that
+/// still exist (plus any newly created). <see cref="Deletions"/> are links where the user removed
+/// one side and the surviving file was confirmed (by content hash) to still be the linked copy —
+/// the caller deletes these via Jellyfin's subtitle API.
+/// </summary>
+public class SubtitleSyncResult
+{
+    public List<LinkedSubtitle> Records { get; set; } = new();
+
+    public List<SubtitleDeletion> Deletions { get; set; } = new();
+}
+
+public class SubtitleDeletion
+{
+    public required LinkedSubtitle Record { get; init; }
+
+    public bool SurvivingIsEpisode { get; init; }
+
+    public string SurvivingPath { get; init; } = string.Empty;
 }

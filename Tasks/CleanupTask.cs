@@ -6,6 +6,8 @@ using Jellyfin.Plugin.SpecialToMovie.Services;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
+using MediaBrowser.Controller.Subtitles;
+using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.Tasks;
 using Microsoft.Extensions.Logging;
 
@@ -18,6 +20,8 @@ public class CleanupTask : IScheduledTask
     private readonly IHardLinkService _hardLinkService;
     private readonly WatchSyncService _watchSyncService;
     private readonly SpecialDetectionService _detectionService;
+    private readonly IMediaSourceManager _mediaSourceManager;
+    private readonly ISubtitleManager _subtitleManager;
     private readonly ILogger<CleanupTask> _logger;
 
     public CleanupTask(
@@ -26,6 +30,8 @@ public class CleanupTask : IScheduledTask
         IHardLinkService hardLinkService,
         WatchSyncService watchSyncService,
         SpecialDetectionService detectionService,
+        IMediaSourceManager mediaSourceManager,
+        ISubtitleManager subtitleManager,
         ILogger<CleanupTask> logger)
     {
         _libraryManager = libraryManager;
@@ -33,6 +39,8 @@ public class CleanupTask : IScheduledTask
         _hardLinkService = hardLinkService;
         _watchSyncService = watchSyncService;
         _detectionService = detectionService;
+        _mediaSourceManager = mediaSourceManager;
+        _subtitleManager = subtitleManager;
         _logger = logger;
     }
 
@@ -81,8 +89,15 @@ public class CleanupTask : IScheduledTask
             var pair = pairs[i];
             ValidatePair(pair, config.DryRunMode, config.AutoDeleteOnRemoval, allEpisodes, moviesByPath);
 
-            progress.Report((double)(i + 1) / total * 80);
+            progress.Report((double)(i + 1) / total * 70);
         }
+
+        if (!config.DryRunMode)
+        {
+            await SyncSubtitlesForActivePairsAsync(allEpisodes, cancellationToken).ConfigureAwait(false);
+        }
+
+        progress.Report(80);
 
         _detectionService.EnforceIgnoreList();
         progress.Report(90);
@@ -91,6 +106,72 @@ public class CleanupTask : IScheduledTask
         progress.Report(100);
 
         _logger.LogInformation("SpecialToMovie cleanup finished, validated {Count} pairs", total);
+    }
+
+    private async Task SyncSubtitlesForActivePairsAsync(Dictionary<Guid, BaseItem> allEpisodes, CancellationToken cancellationToken)
+    {
+        var activePairs = _pairStore.GetAll()
+            .Where(p => p.Status == PairStatus.Active && !p.IsExistingMovie && !string.IsNullOrEmpty(p.HardLinkPath))
+            .ToList();
+
+        foreach (var pair in activePairs)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (!allEpisodes.TryGetValue(pair.EpisodeItemId, out var episode))
+            {
+                continue;
+            }
+
+            var sync = _hardLinkService.SyncSubtitles(
+                episode.Path, pair.HardLinkPath!, pair.MovieTitle, pair.MovieYear, pair.LinkedSubtitles);
+
+            var finalRecords = new List<LinkedSubtitle>(sync.Records);
+
+            foreach (var deletion in sync.Deletions)
+            {
+                var item = deletion.SurvivingIsEpisode
+                    ? episode
+                    : (pair.MovieItemId.HasValue ? _libraryManager.GetItemById(pair.MovieItemId.Value) : null);
+
+                if (item == null)
+                {
+                    finalRecords.Add(deletion.Record);
+                    continue;
+                }
+
+                var stream = _mediaSourceManager.GetMediaStreams(item.Id)
+                    .FirstOrDefault(s => s.Type == MediaStreamType.Subtitle && s.IsExternal &&
+                        !string.IsNullOrEmpty(s.Path) &&
+                        string.Equals(s.Path, deletion.SurvivingPath, StringComparison.OrdinalIgnoreCase));
+
+                if (stream == null)
+                {
+                    // Not yet indexed as an external stream — retry next cycle
+                    finalRecords.Add(deletion.Record);
+                    continue;
+                }
+
+                try
+                {
+                    await _subtitleManager.DeleteSubtitles(item, stream.Index).ConfigureAwait(false);
+                    _logger.LogInformation(
+                        "Removed subtitle from linked item via Jellyfin: {Path}", deletion.SurvivingPath);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to delete subtitle via Jellyfin: {Path}", deletion.SurvivingPath);
+                    finalRecords.Add(deletion.Record);
+                }
+            }
+
+            if (finalRecords.Count != pair.LinkedSubtitles.Count ||
+                !finalRecords.SequenceEqual(pair.LinkedSubtitles))
+            {
+                pair.LinkedSubtitles = finalRecords;
+                _pairStore.Upsert(pair);
+            }
+        }
     }
 
     public IEnumerable<TaskTriggerInfo> GetDefaultTriggers()
@@ -184,12 +265,6 @@ public class CleanupTask : IScheduledTask
             }
         }
 
-        // Sync subtitles bidirectionally for active pairs with hard links
-        if (pair.Status == PairStatus.Active && !pair.IsExistingMovie &&
-            !string.IsNullOrEmpty(pair.HardLinkPath) && episode != null)
-        {
-            _hardLinkService.SyncSubtitles(episode.Path, pair.HardLinkPath, pair.MovieTitle, pair.MovieYear);
-        }
     }
 
     private static BaseItem? FindMovieAtPath(string? hardLinkPath, Dictionary<string, BaseItem> moviesByPath)

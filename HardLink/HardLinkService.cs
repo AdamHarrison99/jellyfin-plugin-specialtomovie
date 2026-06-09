@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Text;
 using System.Xml;
 using Jellyfin.Plugin.SpecialToMovie.Models;
@@ -188,12 +189,13 @@ public partial class HardLinkService : IHardLinkService
 
     private static readonly string[] SubtitleSubfolderNames = ["Subs", "Subtitles"];
 
-    public void LinkSubtitles(string episodePath, string movieFolderPath, string movieTitle, int? year)
+    public List<LinkedSubtitle> LinkSubtitles(string episodePath, string movieFolderPath, string movieTitle, int? year)
     {
+        var result = new List<LinkedSubtitle>();
         var episodeDir = Path.GetDirectoryName(episodePath);
         if (string.IsNullOrEmpty(episodeDir) || !Directory.Exists(episodeDir))
         {
-            return;
+            return result;
         }
 
         var episodeBaseName = Path.GetFileNameWithoutExtension(episodePath);
@@ -201,69 +203,123 @@ public partial class HardLinkService : IHardLinkService
         var yearSuffix = year.HasValue ? $" ({year.Value})" : string.Empty;
         var movieBaseName = $"{sanitized}{yearSuffix}";
 
-        LinkSubtitlesFromDir(episodeDir, episodeBaseName, movieFolderPath, movieBaseName, null);
+        LinkSubtitlesFromDir(episodeDir, episodeBaseName, movieFolderPath, movieBaseName, result);
 
         foreach (var subDir in SubtitleSubfolderNames)
         {
             var subPath = Path.Combine(episodeDir, subDir);
             if (Directory.Exists(subPath))
             {
-                var destSubPath = Path.Combine(movieFolderPath, subDir);
-                LinkSubtitlesFromDir(subPath, episodeBaseName, destSubPath, movieBaseName, subDir);
+                LinkSubtitlesFromDir(subPath, episodeBaseName, Path.Combine(movieFolderPath, subDir), movieBaseName, result);
             }
         }
+
+        return result;
     }
 
-    public void SyncSubtitles(string episodePath, string hardLinkPath, string movieTitle, int? year)
+    public SubtitleSyncResult SyncSubtitles(string episodePath, string hardLinkPath, string movieTitle, int? year, List<LinkedSubtitle> existing)
     {
+        var result = new SubtitleSyncResult();
         var episodeDir = Path.GetDirectoryName(episodePath);
         var movieDir = Path.GetDirectoryName(hardLinkPath);
         if (string.IsNullOrEmpty(episodeDir) || string.IsNullOrEmpty(movieDir))
         {
-            return;
+            result.Records.AddRange(existing);
+            return result;
         }
 
+        // Check tracked subtitles for user-side removals
+        foreach (var sub in existing)
+        {
+            var epExists = File.Exists(sub.EpisodeSidePath);
+            var mvExists = File.Exists(sub.MovieSidePath);
+
+            if (epExists && mvExists)
+            {
+                result.Records.Add(sub);
+                continue;
+            }
+
+            if (!epExists && !mvExists)
+            {
+                _logger.LogDebug("Both sides of linked subtitle gone, dropping record: {Ep}", sub.EpisodeSidePath);
+                continue;
+            }
+
+            // One side was removed by the user. Confirm the surviving file is still the
+            // exact content we linked before asking Jellyfin to delete it.
+            var survivingPath = epExists ? sub.EpisodeSidePath : sub.MovieSidePath;
+            var currentHash = ComputeFileHash(survivingPath);
+
+            if (string.IsNullOrEmpty(sub.ContentHash) || currentHash == null ||
+                !string.Equals(currentHash, sub.ContentHash, StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogWarning(
+                    "Surviving subtitle no longer matches the linked content, not deleting: {Path}", survivingPath);
+                continue;
+            }
+
+            result.Deletions.Add(new SubtitleDeletion
+            {
+                Record = sub,
+                SurvivingIsEpisode = epExists,
+                SurvivingPath = survivingPath
+            });
+        }
+
+        // Link new subtitles (only if one side has subs and the other doesn't)
         var episodeHasSubs = HasSubtitles(episodeDir);
         var movieHasSubs = HasSubtitles(movieDir);
 
-        if (episodeHasSubs && movieHasSubs)
+        if (episodeHasSubs != movieHasSubs)
         {
-            return;
-        }
+            var episodeBaseName = Path.GetFileNameWithoutExtension(episodePath);
+            var sanitized = SanitizeFileName(movieTitle);
+            var yearSuffix = year.HasValue ? $" ({year.Value})" : string.Empty;
+            var movieBaseName = $"{sanitized}{yearSuffix}";
 
-        if (!episodeHasSubs && !movieHasSubs)
-        {
-            return;
-        }
-
-        var episodeBaseName = Path.GetFileNameWithoutExtension(episodePath);
-        var sanitized = SanitizeFileName(movieTitle);
-        var yearSuffix = year.HasValue ? $" ({year.Value})" : string.Empty;
-        var movieBaseName = $"{sanitized}{yearSuffix}";
-
-        if (episodeHasSubs)
-        {
-            SyncSubtitlesOneWay(episodeDir, episodeBaseName, movieDir, movieBaseName);
-            foreach (var subDir in SubtitleSubfolderNames)
+            if (episodeHasSubs)
             {
-                var epSub = Path.Combine(episodeDir, subDir);
-                if (Directory.Exists(epSub))
+                LinkSubtitlesOneWay(episodeDir, episodeBaseName, movieDir, movieBaseName, true, result.Records);
+                foreach (var subDir in SubtitleSubfolderNames)
                 {
-                    SyncSubtitlesOneWay(epSub, episodeBaseName, Path.Combine(movieDir, subDir), movieBaseName);
+                    var epSub = Path.Combine(episodeDir, subDir);
+                    if (Directory.Exists(epSub))
+                    {
+                        LinkSubtitlesOneWay(epSub, episodeBaseName, Path.Combine(movieDir, subDir), movieBaseName, true, result.Records);
+                    }
+                }
+            }
+            else
+            {
+                LinkSubtitlesOneWay(movieDir, movieBaseName, episodeDir, episodeBaseName, false, result.Records);
+                foreach (var subDir in SubtitleSubfolderNames)
+                {
+                    var mvSub = Path.Combine(movieDir, subDir);
+                    if (Directory.Exists(mvSub))
+                    {
+                        LinkSubtitlesOneWay(mvSub, movieBaseName, Path.Combine(episodeDir, subDir), episodeBaseName, false, result.Records);
+                    }
                 }
             }
         }
-        else
+
+        return result;
+    }
+
+    private string? ComputeFileHash(string path)
+    {
+        try
         {
-            SyncSubtitlesOneWay(movieDir, movieBaseName, episodeDir, episodeBaseName);
-            foreach (var subDir in SubtitleSubfolderNames)
-            {
-                var mvSub = Path.Combine(movieDir, subDir);
-                if (Directory.Exists(mvSub))
-                {
-                    SyncSubtitlesOneWay(mvSub, movieBaseName, Path.Combine(episodeDir, subDir), episodeBaseName);
-                }
-            }
+            using var stream = File.OpenRead(path);
+            using var sha = SHA256.Create();
+            var hash = sha.ComputeHash(stream);
+            return Convert.ToHexString(hash);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to hash subtitle file: {Path}", path);
+            return null;
         }
     }
 
@@ -292,7 +348,7 @@ public partial class HardLinkService : IHardLinkService
         return false;
     }
 
-    private void LinkSubtitlesFromDir(string sourceDir, string sourceBaseName, string destDir, string destBaseName, string? subfolderName)
+    private void LinkSubtitlesFromDir(string sourceDir, string sourceBaseName, string destDir, string destBaseName, List<LinkedSubtitle> records)
     {
         foreach (var file in Directory.EnumerateFiles(sourceDir))
         {
@@ -313,6 +369,7 @@ public partial class HardLinkService : IHardLinkService
 
             if (File.Exists(linkPath))
             {
+                records.Add(new LinkedSubtitle { EpisodeSidePath = file, MovieSidePath = linkPath, ContentHash = ComputeFileHash(file) });
                 continue;
             }
 
@@ -320,13 +377,13 @@ public partial class HardLinkService : IHardLinkService
 
             if (Create(file, linkPath))
             {
-                _logger.LogInformation("Linked subtitle{Sub}: {Source} -> {Link}",
-                    subfolderName != null ? $" ({subfolderName})" : string.Empty, fileName, linkPath);
+                records.Add(new LinkedSubtitle { EpisodeSidePath = file, MovieSidePath = linkPath, ContentHash = ComputeFileHash(file) });
+                _logger.LogInformation("Linked subtitle: {Source} -> {Link}", fileName, linkPath);
             }
         }
     }
 
-    private void SyncSubtitlesOneWay(string sourceDir, string sourceBaseName, string destDir, string destBaseName)
+    private void LinkSubtitlesOneWay(string sourceDir, string sourceBaseName, string destDir, string destBaseName, bool sourceIsEpisode, List<LinkedSubtitle> records)
     {
         if (!Directory.Exists(sourceDir))
         {
@@ -348,18 +405,23 @@ public partial class HardLinkService : IHardLinkService
             }
 
             var suffix = fileName[sourceBaseName.Length..];
-            var linkPath = Path.Combine(destDir, destBaseName + suffix);
+            var destPath = Path.Combine(destDir, destBaseName + suffix);
 
-            if (File.Exists(linkPath))
+            var epPath = sourceIsEpisode ? file : destPath;
+            var mvPath = sourceIsEpisode ? destPath : file;
+
+            if (File.Exists(destPath))
             {
+                records.Add(new LinkedSubtitle { EpisodeSidePath = epPath, MovieSidePath = mvPath, ContentHash = ComputeFileHash(file) });
                 continue;
             }
 
             Directory.CreateDirectory(destDir);
 
-            if (Create(file, linkPath))
+            if (Create(file, destPath))
             {
-                _logger.LogInformation("Synced subtitle: {Source} -> {Link}", file, linkPath);
+                records.Add(new LinkedSubtitle { EpisodeSidePath = epPath, MovieSidePath = mvPath, ContentHash = ComputeFileHash(file) });
+                _logger.LogInformation("Synced subtitle: {Source} -> {Link}", file, destPath);
             }
         }
     }

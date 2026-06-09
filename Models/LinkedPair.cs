@@ -34,7 +34,22 @@ public class LinkedPair
 
     public string? ErrorMessage { get; set; }
 
+    public List<LinkedSubtitle> LinkedSubtitles { get; set; } = new();
+
     public DateTime CreatedUtc { get; set; }
 
     public DateTime UpdatedUtc { get; set; }
+}
+
+public record LinkedSubtitle
+{
+    public string EpisodeSidePath { get; set; } = string.Empty;
+
+    public string MovieSidePath { get; set; } = string.Empty;
+
+    /// <summary>
+    /// SHA-256 of the subtitle content captured when the link was created.
+    /// Used to confirm a surviving file is still the plugin-linked file before deleting it.
+    /// </summary>
+    public string? ContentHash { get; set; }
 }

@@ -13,6 +13,7 @@ Manual hard links solve the file deduplication problem, but **watch status still
 - **Automatic detection** — identifies Season 0 episodes that are also movies using TMDB and TVDB cross-referencing
 - **Hard links** — no disk space wasted, same file with two directory entries
 - **Bidirectional watch sync** — mark the movie as watched and the episode updates too, and vice versa
+- **Subtitle sync** — hard links external subtitle files between paired items, syncs additions and removals bidirectionally
 - **Existing movie detection** — if the movie already exists in your library, pairs it directly without creating a hard link
 - **Library mapping** — route specials from specific TV libraries to specific movie libraries
 - **Force links & ignore list** — manually override or exclude episodes using names, Jellyfin item IDs, or provider IDs
