@@ -1,6 +1,6 @@
 # Jellyfin Plugin: Special To Movie
 
-Automatically detects TV specials (Season 0 episodes) that are also standalone movies, creates hard links in your movie library, and syncs watch status bidirectionally.
+A Jellyfin plugin that automatically detects TV specials (Season 0 episodes) that are also standalone movies, creates hard links in your movie library for them, and syncs watch status bidirectionally.
 
 ## About
 
@@ -14,7 +14,7 @@ Manual hard links solve the file deduplication problem, but **watch status still
 - **Hard links** — no disk space wasted, same file with two directory entries
 - **Bidirectional watch sync** — mark the movie as watched and the episode updates too, and vice versa
 - **Subtitle sync** — hard links external subtitle files between paired items, syncs additions and removals bidirectionally
-- **Existing movie detection** — if the movie already exists in your library, pairs it directly without creating a hard link
+- **Existing movie detection** — if a linked movie already exists in your library, pairs it directly without creating a hard link
 - **Library mapping** — route specials from specific TV libraries to specific movie libraries
 - **Force links & ignore list** — manually override or exclude episodes using names, Jellyfin item IDs, or provider IDs
 - **Automatic maintenance** — validates pairs periodically, enforces ignore list and force links, fixes orphaned entries
@@ -24,8 +24,8 @@ Manual hard links solve the file deduplication problem, but **watch status still
 
 ## Requirements
 
-- Jellyfin 10.11.0 or later
-- .NET 9.0 runtime (included with Jellyfin 10.11+)
+- Jellyfin 12.0.0 or later
+- .NET 10.0 runtime (included with Jellyfin 12+)
 - API key for your primary metadata provider (TMDB by default; both recommended for best accuracy)
   - TMDB API key (free — [get one here](https://www.themoviedb.org/settings/api))
   - TVDB API key (free — [get one here](https://thetvdb.com/api-information))
@@ -62,7 +62,7 @@ cd jellyfin-plugin-specialtomovie
 dotnet build -c Release
 ```
 
-Copy `bin/Release/net9.0/Jellyfin.Plugin.SpecialToMovie.dll` to your plugins directory and restart Jellyfin.
+Copy `bin/Release/net10.0/Jellyfin.Plugin.SpecialToMovie.dll` to your plugins directory and restart Jellyfin.
 
 ## Configuration
 
@@ -89,7 +89,7 @@ Click **Run Full Scan** on the plugin config page. This scans all Season 0 episo
 
 ### 4. Review in Dry Run Mode
 
-Dry run mode is **enabled by default**, so the scan will detect matches without creating any files. Go back to the plugin config page to review the detected pairs in the **Linked Pairs** table.
+Dry run mode is **enabled by default**, so the scan will detect matches without creating any files. Scroll down to the **linked pairs** table to review the detected pairs.
 
 **No files are created or modified** while dry run is active. Use the ignore list, force links, and bulk remove to adjust any incorrect matches before activating.
 
@@ -158,7 +158,7 @@ See [#1](https://github.com/AdamHarrison99/jellyfin-plugin-specialtomovie/issues
 
 If a TV show/special is removed and re-added before the plugin can detect the change (e.g., swapping a DVD rip for a Blu-ray release), old hard link files may remain on disk.
 
-**To clean up:** Click **Remove All Hard Links** on the config page and re-run a full scan, or manually delete the old movie folders from your destination library.
+**To clean up:** Click **Remove All Hard Links** on the config page and re-run a full scan, or manually delete the old movies from your destination library.
 
 ## FAQ
 
@@ -182,4 +182,4 @@ No. The plugin creates movies in `[JellyfinPlugin-SpecialToMovie]`-tagged folder
 
 ---
 
-*This project was built with AI code development tools ([Claude Code](https://www.anthropic.com/claude-code)).*
+*This project was built utilizing AI code development tools ([Claude Code](https://www.anthropic.com/claude-code)).*

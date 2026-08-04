@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "1.0.16.0",
+        "changelog": "Jellyfin 12 support — the plugin now targets .NET 10 and the Jellyfin 12 API surface. Requires Jellyfin 12.0.0 or later; Jellyfin 10.11 servers should stay on 1.0.15.0. No functional or behavioral changes.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/AdamHarrison99/jellyfin-plugin-specialtomovie/releases/download/v1.0.16/specialtomovie-v1.0.16.zip",
+        "checksum": "549c4765a9bf5f21c6138376b8663794",
+        "timestamp": "2026-08-04T15:10:36Z"
+      },
+      {
         "version": "1.0.15.0",
         "changelog": "Subtitle deletion sync — removing a subtitle from one side removes it from the linked item via Jellyfin's subtitle API, verified by content hash.",
         "targetAbi": "10.11.10.0",

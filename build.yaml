@@ -1,8 +1,8 @@
 name: "SpecialToMovie"
 guid: "a1b2c3d4-5678-9abc-def0-123456789abc"
-version: "1.0.0.0"
-targetAbi: "10.11.0.0"
-framework: "net9.0"
+version: "1.0.16.0"
+targetAbi: "12.0.0.0"
+framework: "net10.0"
 overview: "Detects TV specials that are also movies, creates hard links, and syncs watch status."
 description: |
   Automatically detects Season 0 episodes that are also standalone movies (e.g., El Camino,
@@ -14,4 +14,4 @@ owner: "AdamHarrison99"
 artifacts:
   - "Jellyfin.Plugin.SpecialToMovie.dll"
 changelog: |
-  - Initial release
+  - Update for Jellyfin 12: target .NET 10 and the Jellyfin 12 API surface
