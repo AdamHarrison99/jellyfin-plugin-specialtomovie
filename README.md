@@ -64,8 +64,6 @@ dotnet build -c Release
 
 Copy `bin/Release/net10.0/Jellyfin.Plugin.SpecialToMovie.dll` to your plugins directory and restart Jellyfin.
 
-The [`agentic/`](agentic/) folder holds this project's AI-agent-facing documentation — a codebase map, the release process, the security audit history, and the feature backlog.
-
 ## Configuration
 
 After installation, go to **Dashboard → Plugins → SpecialToMovie** (or use the sidebar entry in the dashboard menu).
@@ -185,3 +183,5 @@ No. The plugin creates movies in `[JellyfinPlugin-SpecialToMovie]`-tagged folder
 ---
 
 *This project was built utilizing AI code development tools ([Claude Code](https://www.anthropic.com/claude-code)).*
+
+*The `agentic/` folder holds the design document, architecture notes, audit history and test harnesses used to build and verify the plugin; nothing in it ships in the plugin itself.*
