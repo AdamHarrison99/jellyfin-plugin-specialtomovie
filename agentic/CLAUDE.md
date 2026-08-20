@@ -10,7 +10,8 @@
 │   ├── AUDIT.md                    ← security/efficiency audit history
 │   ├── IDEAS.md                    ← prioritised feature backlog
 │   ├── HANDOFF.md                  ← codebase map, read first in a new session
-│   └── JellyfinPlugin-SpecialToMovie plan.md   ← original design doc (historical)
+│   ├── JellyfinPlugin-SpecialToMovie plan.md   ← original design doc (historical)
+│   └── memory/                      ← standing conventions, one rule per file
 ├── README.md                       ← user-facing docs
 ├── manifest.json                   ← Jellyfin plugin manifest (serves as the plugin repository index)
 ├── build.yaml                      ← JPRM build manifest (no consumer; kept in sync by hand)
@@ -100,6 +101,43 @@ Previous audit results are recorded in [`AUDIT.md`](AUDIT.md) alongside this fil
 **Always update `AUDIT.md` with results immediately after completing an audit — do not ask for confirmation first.**
 
 After completing an audit, also check whether `README.md` needs updating to reflect any new features, changed defaults, renamed tasks, or new configuration options added since the last release.
+
+## Memory
+
+Project conventions — any standing rule or constraint about how this codebase is worked on — are
+written as files in [`memory/`](memory/). **Read [`memory/MEMORY.md`](memory/MEMORY.md) at the start
+of every session**; it indexes every rule currently in force, and several of them constrain what you
+are allowed to do. Never leave a convention only in a session transcript.
+
+This folder is public, so it holds **project conventions only**. Anything personal or
+machine-specific — environment details, local paths, user preferences — goes to the agent's own
+local memory store outside the repository instead, and is never written here. Decide which of the
+two a memory belongs to before writing it.
+
+One fact per file, named `feedback_<slug>.md`, with this shape:
+
+```markdown
+---
+name: <short-kebab-case-slug>
+description: <one-line summary>
+metadata:
+  type: feedback
+---
+
+<the rule>
+
+**Why:** <the reason it exists>
+
+**How to apply:** <what to do differently> Related: [[other-slug]].
+```
+
+After adding a file, add one line for it to [`memory/MEMORY.md`](memory/MEMORY.md), which is the
+index. Before writing a new memory, check whether an existing file already covers the ground and
+update that one instead of creating a near-duplicate; delete any memory that turns out to be wrong.
+
+Write these impersonally — the rule, its rationale, and how to apply it. Do not quote the user,
+characterise them, log that a correction happened, or include session identifiers, absolute paths, or
+any other machine-specific detail.
 
 ## API Keys
 

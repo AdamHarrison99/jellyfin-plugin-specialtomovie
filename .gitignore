@@ -4,6 +4,3 @@ obj/
 *.suo
 .vs/
 *.DotSettings.user
-
-# Local workspace config — API keys, never commit
-claude_config.yaml
