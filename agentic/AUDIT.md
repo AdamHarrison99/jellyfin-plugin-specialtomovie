@@ -1,5 +1,42 @@
 # Security & Efficiency Audit Log
 
+## Standing Check: PII & Documentation Sweep
+
+Every audit includes a sweep of **all tracked files** for personally identifying information — source
+comments, everything under `agentic/` (including `agentic/memory/`), `README.md`, `manifest.json`,
+`build.yaml`, the `.csproj`, config UI text, and log/exception strings — not only the prose docs. The
+repository is public and its history is permanent, so anything personal that reaches `master` cannot
+be withdrawn.
+
+A finding is anything identifying a **person** or a **machine**: absolute or drive-rooted paths,
+usernames, home directories, cloud-drive folder names, network share or UNC paths, hostnames, IP
+addresses, email addresses, credentials or API keys, session identifiers, personal media-library
+names, developer-machine inventories, or quotes of or characterisations of the user. Patterns, the
+runnable commands, and the full scope list are in
+[`CLAUDE.md` -> Pre-Release Audit -> PII & Documentation Sweep](CLAUDE.md#pii--documentation-sweep).
+
+Every audit entry below carries a **PII Sweep** line recording that the sweep ran, what it covered,
+and each finding with its resolution. A clean sweep is still recorded.
+
+### Known-Acceptable Matches (do not re-flag)
+
+| Match | Where | Why it is not a finding |
+| --- | --- | --- |
+| The project's GitHub owner handle and repository URL | `manifest.json`, `build.yaml`, `README.md`, `agentic/CLAUDE.md` | The plugin is published from that account, so the handle is the project's public identity rather than a leak. |
+| Commit author name and email in git metadata | published history | Inherent to any published repository; outside the scope of a file sweep and not withdrawable after push. |
+| Jellyfin's own install paths (`C:\ProgramData\Jellyfin\...`, `/var/lib/jellyfin/...`, `/config/...`) | `README.md` install steps | Jellyfin's install locations on any server, not paths on a developer machine. |
+| The .NET SDK version used for a release build | `HANDOFF.md` | Documents the toolchain the build requires, not an inventory of a specific machine. |
+| Four-part dotted versions (`1.0.16.0`, `12.0.0.0`, `10.11.11.0`) | throughout | Assembly and ABI versions, not IP addresses. These dominate the dotted-quad check. |
+| The sweep patterns matching themselves | `agentic/CLAUDE.md` | The documented regexes match their own documentation. |
+
+**Baseline — 2026-08-20**: first full sweep, all 43 tracked files, run in both Git Bash and
+PowerShell. **Clean.** No absolute developer paths, machine names, share names, email addresses, or
+credentials in any tracked file. All 115 source comment lines were read individually — every one is
+technical, none personal. The only matches returned were the known-acceptable ones above.
+
+---
+---
+
 ## Audit: 2026-08-04 (Session 14 — Pre-release v1.0.16.0, Jellyfin 12 migration)
 
 **Scope**: Framework/runtime migration only. `TargetFramework` `net9.0` -> `net10.0`; `Jellyfin.Controller`/`Jellyfin.Model` `10.*` -> pinned `12.0.0-rc4`; `AssemblyVersion`/`FileVersion` -> `1.0.16.0`; `build.yaml` `targetAbi`/`framework` corrected; README requirements + build-output path corrected.

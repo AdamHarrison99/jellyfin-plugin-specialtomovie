@@ -13,3 +13,4 @@ exists, and how to apply it.
 - [Build before handing off](feedback_build_before_push.md) — run dotnet build -c Release and verify success
 - [Always update AUDIT.md](feedback_always_update_audit.md) — write audit results immediately, without asking first
 - [README after audit](feedback_readme_after_audit.md) — check README against the code at the end of every audit
+- [PII sweep in every audit](feedback_pii_sweep_in_audit.md) — sweep every tracked file, source comments included, for personal or machine-identifying detail

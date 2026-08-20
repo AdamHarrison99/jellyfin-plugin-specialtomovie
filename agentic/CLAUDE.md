@@ -93,6 +93,7 @@ Before every new version release, perform a full security and efficiency audit o
 3. Check for race conditions in event handlers and concurrent operations
 4. Verify all file system operations have proper safety checks
 5. Review API endpoints for authorization and input validation gaps
+6. Sweep every tracked file for personally identifying information — see [PII & Documentation Sweep](#pii--documentation-sweep) below
 
 **Do not commit code or cut a release until all findings have been presented to the user for review.** Present each issue with its location, severity, and proposed resolution. Only proceed after the user approves.
 
@@ -101,6 +102,56 @@ Previous audit results are recorded in [`AUDIT.md`](AUDIT.md) alongside this fil
 **Always update `AUDIT.md` with results immediately after completing an audit — do not ask for confirmation first.**
 
 After completing an audit, also check whether `README.md` needs updating to reflect any new features, changed defaults, renamed tasks, or new configuration options added since the last release.
+
+### PII & Documentation Sweep
+
+Step 6 covers **every tracked file**, not only the prose docs. The repository is public and its
+history is permanent, so a personal detail that reaches `master` cannot be withdrawn. In scope:
+
+- source **comments** — `///` XML docs, `//` notes, and commented-out code
+- everything under `agentic/`, including `agentic/memory/`
+- `README.md`, `manifest.json`, `build.yaml`, the `.csproj`, and the config UI text in `configPage.html`
+- log messages and exception strings, which end up pasted into user-submitted logs
+- the commit message written for the release itself
+
+A finding is anything identifying a **person** or a **machine**: absolute or drive-rooted paths,
+Windows usernames or home directories, cloud-drive folder names, network share or UNC paths,
+hostnames, IP addresses, email addresses, credentials or API keys, session identifiers, personal
+media-library or directory names, developer-machine inventories, and direct quotes of or
+characterisations of the user. Replace each with a repo-relative path (`../Data/PairStore.cs`) or a
+generic description ("if the working copy is on a network share...").
+
+Scope the sweep to tracked files so build output and ignored local files are excluded:
+
+```powershell
+$files = git ls-files
+
+# 1. Drive-rooted paths, UNC paths, home directories
+Select-String -Path $files -Pattern '(^|[^A-Za-z0-9_])[A-Za-z]:[\\/]', '\\\\[A-Za-z0-9]', '/home/', '/Users/', 'USERPROFILE', '/Volumes/', '/mnt/'
+
+# 2. Email addresses
+Select-String -Path $files -Pattern '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}'
+
+# 3. This machine's identity, read from the environment so no real value is ever written into these docs
+$me = @($env:USERNAME, $env:COMPUTERNAME, (git config user.name), (git config user.email)) | Where-Object { $_ }
+Select-String -Path $files -SimpleMatch -Pattern $me
+
+# 4. Dotted quads — expect version-number noise; anything that is not a version is a finding
+Select-String -Path $files -Pattern '\b([0-9]{1,3}\.){3}[0-9]{1,3}\b'
+
+# 5. Every comment line, to be read rather than pattern-matched
+Select-String -Path $files -Pattern '^\s*(//|///|\*|<!--)'
+```
+
+Checks 1-4 are mechanical. Check 5 is a read-through: a personal detail phrased in prose ("the drive
+I keep recordings on") matches no pattern. Sweep the working tree's uncommitted edits too, since this
+runs before the release commit exists.
+
+Known-acceptable matches are listed in [`AUDIT.md`](AUDIT.md#known-acceptable-matches-do-not-re-flag)
+— check them before flagging anything, and add to that list when a new one is settled.
+
+Record the result in `AUDIT.md` under the audit entry **even when the sweep is clean**: that it ran,
+what it covered, and every finding with its resolution.
 
 ## Memory
 

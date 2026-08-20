@@ -18,4 +18,4 @@ incidental detail cannot be taken back.
 
 **How to apply:** Before writing to any file under `agentic/`, scan the new text for the categories
 above. Keep source links repo-relative from `agentic/` — `../Data/PairStore.cs`, `../README.md`.
-Related: [[never-commit]], [[always-update-audit]].
+Related: [[never-commit]], [[always-update-audit]], [[pii-sweep-in-audit]].
