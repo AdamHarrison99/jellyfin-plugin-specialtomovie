@@ -15,7 +15,7 @@ public class FullScanTask : IScheduledTask
         _logger = logger;
     }
 
-    public string Name => "Full Scan";
+    public string Name => "SpecialToMovie - Full Scan";
 
     public string Key => "SpecialToMovieFullScan";
 

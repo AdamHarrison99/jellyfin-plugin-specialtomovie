@@ -111,11 +111,11 @@ The **Remove All Hard Links** button in the config page deletes all plugin-creat
 
 The plugin registers two scheduled tasks in Jellyfin's **Scheduled Tasks** dashboard.
 
-### Full Scan (defaults to daily at midnight)
+### SpecialToMovie - Full Scan (defaults to daily at midnight)
 
 Scans all Season 0 episodes and looks up each against TMDB/TVDB. Also enforces the ignore list, processes force links, promotes DryRun pairs, and re-syncs watch state.
 
-### Sync & Maintenance (defaults to every 6 hours)
+### SpecialToMovie - Sync & Maintenance (defaults to every 6 hours)
 
 Validates all existing pairs and repairs inconsistencies. Removes stale pairs, enforces the ignore list, processes force links, recreates missing hard links, promotes Pending pairs, and retries Error pairs.
 

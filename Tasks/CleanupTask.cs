@@ -44,7 +44,7 @@ public class CleanupTask : IScheduledTask
         _logger = logger;
     }
 
-    public string Name => "Sync & Maintenance";
+    public string Name => "SpecialToMovie - Sync & Maintenance";
 
     public string Key => "SpecialToMovieCleanup";
 
