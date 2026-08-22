@@ -11,6 +11,7 @@
 │   ├── IDEAS.md                    ← prioritised feature backlog
 │   ├── HANDOFF.md                  ← codebase map, read first in a new session
 │   ├── JellyfinPlugin-SpecialToMovie plan.md   ← original design doc (historical)
+│   ├── plans/                       ← per-feature implementation plans, one file per feature
 │   └── memory/                      ← standing conventions, one rule per file
 ├── README.md                       ← user-facing docs
 ├── manifest.json                   ← Jellyfin plugin manifest (serves as the plugin repository index)
