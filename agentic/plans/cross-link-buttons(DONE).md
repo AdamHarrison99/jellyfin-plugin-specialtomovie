@@ -2,7 +2,7 @@
 
 | | |
 | --- | --- |
-| **Status** | Approved — scope decisions recorded 2026-08-21 ([§12](#12-decisions-taken)); not started |
+| **Status** | **Implemented 2026-08-24**, all three phases plus the `PairStore` indexes; audited and verified. Unreleased — no version bump yet. Scope decisions: [§12](#12-decisions-taken). Where the build diverged from the plan: [§5.4](#54-pairstore-indexes-in-scope-for-this-change), [§13](#13-as-built-notes) |
 | **Source** | Moved out of [`IDEAS.md`](../IDEAS.md) (high-priority item), expanded and re-verified |
 | **Target Jellyfin** | `12.0.0-rc4` (the pinned package version — see HANDOFF "Known gotchas") |
 | **Research verified** | 2026-08-21, against the pinned NuGet assemblies, `jellyfin` master, `jellyfin-web` master, and `n00bcodr/Jellyfin-Enhanced` main |
@@ -557,17 +557,31 @@ _pairStore.Upsert(pair);
 directly, so inside `Upsert` the entry at `_pairs[index]` **is** the incoming `pair`. The previous
 key is already overwritten and cannot be recovered from either object.
 
-So the store must remember what it indexed, independently of the pair objects:
+**As built: full rebuild, not incremental maintenance.** The plan originally called for the store to
+remember what it had indexed, in a `Dictionary<Guid, (Guid Episode, Guid? Movie)> _indexedKeys`, and
+for every mutation path to evict through that record. The implementation does something simpler and
+strictly safer — a private `RebuildIndexes()` that discards and reconstructs every index from
+`_pairs`, called after each mutation and once after `Load()`:
 
 ```csharp
-// pair Id → the keys currently present in the indexes for that pair
-private readonly Dictionary<Guid, (Guid Episode, Guid? Movie)> _indexedKeys = new();
+private Dictionary<Guid, LinkedPair> _byEpisodeId = new();
+private Dictionary<Guid, LinkedPair> _byMovieId = new();
+private Dictionary<string, LinkedPair> _byHardLinkPath = new(StringComparer.OrdinalIgnoreCase);
+private Dictionary<Guid, int> _positionById = new();
 ```
 
-Every mutation path evicts using `_indexedKeys[pair.Id]`, re-inserts, and updates the record;
-`Remove` / `RemoveMany` evict and drop the record; `Load` / `Clear` rebuild all three structures
-together. This is the single design point that makes the change safe — everything else about it is
-routine.
+The justification is that every mutation **already** pays an O(n) serialise plus a backup copy, a
+temp write and a rename inside `Save()`, under the same lock. An O(n) dictionary rebuild is free
+against that, and it makes the stale-key class of bug structurally impossible rather than merely
+handled. `_indexedKeys` would have been a second piece of state to keep consistent with `_pairs` —
+exactly the kind of thing the trap above is made of.
+
+Two indexes beyond the plan's two came along for free once the rebuild was the mechanism:
+`_byHardLinkPath` (replacing the `List.Find` in `GetByHardLinkPath`) and `_positionById` (replacing
+the `FindIndex` in `Upsert`/`UpsertMany` and the `Find` in `GetById`).
+
+One incremental update survives: `UpsertMany` sets `_positionById[pair.Id]` before appending, so a
+pair appearing twice in a single batch updates in place instead of being appended twice.
 
 Two further constraints:
 
@@ -581,9 +595,16 @@ Two further constraints:
 detection service, cleanup task, event handler, and controller) — but index it through the same
 `_indexedKeys` mechanism anyway rather than relying on that remaining true.
 
-A cheap safety net: keep the `List.Find` implementations as private fallbacks and add a debug-only
-assertion that the index result matches, so a maintenance bug surfaces in testing rather than as a
-silently wrong button.
+The plan's proposed safety net — keeping the `List.Find` implementations as private fallbacks behind
+a debug assertion — was **not** built. With a wholesale rebuild there is no divergence for it to
+catch: the indexes are a pure function of `_pairs` at every point where the lock is released. A
+19-assertion harness against the built assembly covers the semantics instead, including the in-place
+mutation case that defeats incremental eviction.
+
+One behaviour change fell out of the rebuild: `GetByHardLinkPath` now returns `null` for a null or
+empty path. The old `List.Find` compared with `string.Equals(..., OrdinalIgnoreCase)` and so matched
+the *first pair with no hard link path* when handed null — a latent false match. The sole caller
+already guards on `!string.IsNullOrEmpty(movie.Path)`, so nothing depended on the old behaviour.
 
 Out of scope, but noted: because callers mutate live references before calling `Upsert`, a concurrent
 reader can already observe a half-updated pair. That predates this change and the indexes neither
@@ -947,3 +968,91 @@ already in [§10](#10-testing-checklist):
 - what a non-web client actually does with each URL form;
 - two `IStartupFilter`s (ours + JE) buffering the same `index.html`, in both install orders;
 - `Absolute` mode's output behind a reverse proxy and under a configured base URL.
+
+---
+
+## 13. As-built notes
+
+Written after implementation on 2026-08-24. The plan above is preserved as it was approved; this
+section records where the build differs from it and what the post-implementation audit changed.
+
+### Divergences from the plan
+
+| Plan said | Built | Why |
+| --- | --- | --- |
+| `_indexedKeys` record, incremental eviction ([§5.4](#54-pairstore-indexes-in-scope-for-this-change)) | `RebuildIndexes()` — wholesale rebuild after every mutation | The mutation path already pays O(n) in `Save()`; a rebuild makes stale keys impossible instead of merely handled |
+| Two indexes (`EpisodeItemId`, `MovieItemId`) | Four (`+ HardLinkPath`, `+ position by pair Id`) | Free once the rebuild is the mechanism; removes the last three `List.Find`/`FindIndex` scans |
+| `List.Find` fallbacks behind a debug assertion | Not built | Nothing to diverge from with a pure-function rebuild; a 19-assertion harness covers the semantics instead |
+| Five config properties, in their own "Detail Page Links" section | **Two**, one of them unlisted. `ShowCrossLinks` is a single checkbox in General; `InjectClientScript` stays in the stored configuration only | Once the captions and the URL style were gone the section held one meaningful switch, which does not earn a heading of its own. `InjectClientScript` was kept but unlisted: it is the escape hatch if the middleware misbehaves, and [§12/D5](#12-decisions-taken) leaned on its existence, but it is not a choice a user should be asked to make |
+| Configurable button captions (`MovieLinkLabel`, `SpecialLinkLabel`) | **Removed after shipping.** The captions are constants on the providers | Same reasoning as the link style below, in a milder form: the setting asked the user to make a decision that has one sensible answer, and every extra field is another thing to render, validate, persist and document. Five new settings became two |
+| A `CrossLinkUrlStyle` setting choosing relative vs absolute ([§5.5](#55-absolute-url-mode), [D2](#12-decisions-taken)) | **Removed after shipping.** The server always emits the full URL; the client script reduces it to the hash form in the browser | The setting made the user arbitrate a conflict they cannot see: native apps can only follow a full URL, while in the web client a full URL opens a new tab and reloads the whole app. Neither choice was right for both. Splitting the responsibility — server emits the portable form, browser normalises it for itself — makes both correct with nothing to configure |
+
+Everything else — the two provider classes, the resolver, the embedded script, the anonymous script
+route, the startup filter, the five config properties, and the default-on decision from
+[§12](#12-decisions-taken) — was built as specified.
+
+### The audit finding: ItemRemoved cascade
+
+The one defect the post-implementation audit found was **not** in the cross-link feature. The new
+"delete the linked media too?" prompt made `RemovePair` delete the movie item *before* removing the
+pair from the store. Jellyfin raises `ItemRemoved` for that deletion, `LibraryEventHandler` finds the
+pair still present, reads it as a user-initiated removal, and — with auto-delete **and** two-way
+deletion both on — deletes the original episode file.
+
+`LibraryEventHandler` already encodes the correct ordering in a comment ("Remove pair first to
+prevent cascading events"). Four other call sites did not follow it, all pre-existing:
+
+| Site | Cascade reachable? |
+| --- | --- |
+| `SpecialToMovieController.RemovePair` (new code) | Yes — episode deleted |
+| `SpecialToMovieController.RemoveAllLinks` | Yes — episode deleted, then the pair is re-`Upsert`ed pointing at a file that no longer exists |
+| `SpecialToMovieController.RemoveForceLinkedPairs` | Yes |
+| `SpecialDetectionService.EnforceIgnoreList` | Yes — and the new "ignore a whole series" entry form multiplies one ignore-list edit across every special in a series |
+| `CleanupTask.ValidatePair` | No — that branch only runs when the episode is already gone |
+
+All five now remove or persist the pair first and delete media afterwards. The rule is worth stating
+plainly for future work: **a pair must leave the store, or stop pointing at the item, before that
+item is handed to `LibraryManager.DeleteItem`.**
+
+### The badge, and matching the row
+
+The plan assumed one visual treatment for the link. In practice the row it joins has two, decided by
+what else the user has installed: Jellyfin renders text links joined by `", "`, and plugins such as
+Jellyfin Enhanced replace them with brand logo tiles. A single treatment is therefore wrong in one of
+the two cases — a lone text link among badges, or a lone badge among text.
+
+The script now reads the row and matches it. Badge rows get a circular tile in Jellyfin's
+blue-to-purple carrying two interlocking rings — round and symmetrical so it sits with marks like
+Trakt's and Jellyseerr's, self-coloured so it does not recolour itself with the theme the way a
+brand badge never would, and last in the row so it reads as an addition to the set. Text rows get
+plain text, untouched and in place.
+
+Detection asks the row what it looks like — a badge row is one whose links render a picture and no
+words — rather than testing for a named plugin or CSS class. Jellyfin Enhanced is still not a
+dependency at any layer ([§6.4](#64-does-this-require-jellyfin-enhanced)), and nothing here breaks if
+it renames a class or the user turns its logo setting off.
+
+### The link-style setting, and why it is gone
+
+[§5.5](#55-absolute-url-mode) and [D2](#12-decisions-taken) settled on a user-facing choice between
+the relative and absolute URL forms, defaulting to relative. Shipping it exposed the flaw in framing
+it as a choice at all:
+
+| | Web client | Phone / tablet / TV app |
+| --- | --- | --- |
+| Hash route | Navigates in place, instantly | Cannot follow it |
+| Full URL | New tab, full reload of the app; broken outright behind a proxy with no forwarded headers, or on mixed content | The only form that works |
+
+There is no setting value that is right for a user who owns both, and the failure is silent either
+way. The setting was removed and the responsibility split: the resolver always emits the full URL,
+because that is the only form some clients can use, and the client script reduces every link to its
+hash before the user clicks it, because the browser is the one place the full URL is wrong.
+
+This is the same reasoning that removed the caption settings and collapsed the section: every one of
+those settings asked the user to arbitrate something the code can determine, or something with a
+single sensible answer. Five settings became one visible checkbox.
+
+The rewrite is not conditional on the URL being same-origin. These links always target an item on the
+server that served the page, so the hash is always the right way to reach it from there — including
+when a reverse proxy hands the server a host name the browser cannot resolve, which is exactly the
+case a same-origin test would get wrong.

@@ -74,6 +74,7 @@ public class SpecialToMovieController : ControllerBase
     {
         var pairs = _pairStore.GetAll();
         var modified = new List<LinkedPair>();
+        var movieItemIds = new List<Guid?>();
 
         foreach (var pair in pairs)
         {
@@ -82,7 +83,7 @@ public class SpecialToMovieController : ControllerBase
                 continue;
             }
 
-            DeleteItemWithFiles(pair.MovieItemId);
+            movieItemIds.Add(pair.MovieItemId);
 
             pair.Status = PairStatus.DryRun;
             pair.HardLinkPath = null;
@@ -91,9 +92,16 @@ public class SpecialToMovieController : ControllerBase
             modified.Add(pair);
         }
 
+        // Persist the cleared MovieItemIds before deleting, so the ItemRemoved handler can no
+        // longer match these pairs by movie ID and cascade into the original episodes.
         if (modified.Count > 0)
         {
             _pairStore.UpsertMany(modified);
+        }
+
+        foreach (var movieItemId in movieItemIds)
+        {
+            DeleteItemWithFiles(movieItemId);
         }
 
         _logger.LogInformation(
@@ -135,6 +143,7 @@ public class SpecialToMovieController : ControllerBase
     {
         var allPairs = _pairStore.GetAll();
         var toRemove = new List<LinkedPair>();
+        var toDelete = new List<Guid?>();
 
         foreach (var key in request.EpisodeKeys)
         {
@@ -161,7 +170,7 @@ public class SpecialToMovieController : ControllerBase
             {
                 if (!pair.IsExistingMovie)
                 {
-                    DeleteItemWithFiles(pair.MovieItemId);
+                    toDelete.Add(pair.MovieItemId);
                 }
 
                 toRemove.Add(pair);
@@ -169,9 +178,15 @@ public class SpecialToMovieController : ControllerBase
             }
         }
 
+        // Pairs first, then media: see the note in RemovePair on the ItemRemoved cascade.
         if (toRemove.Count > 0)
         {
             _pairStore.RemoveMany(toRemove.Select(p => p.Id));
+        }
+
+        foreach (var movieItemId in toDelete)
+        {
+            DeleteItemWithFiles(movieItemId);
         }
 
         return Ok(new { Removed = toRemove.Count });
@@ -188,9 +203,27 @@ public class SpecialToMovieController : ControllerBase
             return NotFound(new { Message = "Pair not found" });
         }
 
+        // Remove the pair before deleting anything: Jellyfin raises ItemRemoved for the movie, and
+        // if the pair were still in the store the handler would treat it as a user-initiated
+        // removal and cascade into the original episode whenever two-way deletion is enabled.
         _pairStore.Remove(pair.Id);
-        _logger.LogInformation("Removed pair {PairId} ({Title}) via API", pair.Id, pair.MovieTitle);
-        return Ok(new { Removed = true });
+
+        // Two guards the request cannot talk its way past. A pre-existing movie belongs to the
+        // user's library, not to this plugin. And deletion is gated on the *saved* setting, not on
+        // the caller's word for it: the config page tracks the checkbox live, so an unsaved tick
+        // would otherwise delete files the stored configuration says to keep.
+        var deletedMedia = false;
+        if (request.DeleteMedia && !pair.IsExistingMovie &&
+            Plugin.Instance?.Configuration.AutoDeleteOnRemoval == true)
+        {
+            DeleteItemWithFiles(pair.MovieItemId);
+            deletedMedia = true;
+        }
+
+        _logger.LogInformation(
+            "Removed pair {PairId} ({Title}) via API, linked item deleted: {DeletedMedia}",
+            pair.Id, pair.MovieTitle, deletedMedia);
+        return Ok(new { Removed = true, DeletedMedia = deletedMedia });
     }
 
     [HttpPost("ClearDatabase")]
@@ -291,6 +324,12 @@ public class SpecialToMovieController : ControllerBase
     public class RemovePairRequest
     {
         public Guid PairId { get; set; }
+
+        /// <summary>
+        /// Gets or sets a value indicating whether the plugin-managed movie item and its files
+        /// should be deleted along with the pair. Ignored for pre-existing movies.
+        /// </summary>
+        public bool DeleteMedia { get; set; }
     }
 
     public class RemoveForceLinkedPairsRequest

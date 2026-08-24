@@ -31,6 +31,11 @@ WatchSyncService (IHostedService, subscribes IUserDataManager.UserDataSaved)
 
 SpecialToMovieController (REST, [Authorize(Policy = Policies.RequiresElevation)])
     → manual task triggers, pair CRUD, cache clear, API key connectivity tests
+
+LinkedMovieUrlProvider / LinkedSpecialUrlProvider (IExternalUrlProvider, found by Jellyfin's part scan)
+    → PairStore lookup → CrossLinkUrlResolver → the cross-link button on an item's detail page
+ScriptInjectionStartupFilter (IStartupFilter) → adds <script src="{baseUrl}/SpecialToMovie/ClientScript"> to index.html
+ClientScriptController ([AllowAnonymous]) → serves the embedded Web/specialtomovie.js
 ```
 
 All services are DI-registered in `PluginServiceRegistrator.cs` (below) — read that file first if you want the whole service graph in one screen.
@@ -42,13 +47,15 @@ services.AddSingleton<TmdbLookupService>();
 services.AddSingleton<TvdbLookupService>();
 services.AddSingleton<AggregatedLookupService>();
 services.AddSingleton<IHardLinkService, HardLinkService>();
+services.AddSingleton<CrossLinkUrlResolver>();
+services.AddSingleton<IStartupFilter, ScriptInjectionStartupFilter>();
 services.AddSingleton<WatchSyncService>();
 services.AddHostedService(sp => sp.GetRequiredService<WatchSyncService>());
 services.AddSingleton<SpecialDetectionService>();
 services.AddHostedService<LibraryEventHandler>();
 ```
 
-`FullScanTask` and `CleanupTask` implement `IScheduledTask` and are auto-discovered by Jellyfin — no explicit registration.
+`FullScanTask` and `CleanupTask` implement `IScheduledTask` and are auto-discovered by Jellyfin — no explicit registration. The same is true of the two `IExternalUrlProvider`s: Jellyfin's `ApplicationHost.FindParts` discovers and constructs them from the root service provider, so **registering them here would construct them twice**. Only the `CrossLinkUrlResolver` they depend on is registered, because their constructor arguments must be resolvable from the container.
 
 ## File-by-file reference
 
@@ -74,7 +81,27 @@ services.AddHostedService<LibraryEventHandler>();
 | `EventHandlers/LibraryEventHandler.cs` | `ItemAdded`/`ItemRemoved` subscriptions — real-time detection + pair activation/cleanup. |
 | `Tasks/FullScanTask.cs` | Wraps `SpecialDetectionService.RunFullScanAsync`. Daily @ midnight by default. |
 | `Tasks/CleanupTask.cs` | Validates all pairs, repairs inconsistencies, syncs subtitles. Every `CleanupIntervalHours` (default 6). |
-| `Api/SpecialToMovieController.cs` | REST endpoints — full table below. |
+| `Api/SpecialToMovieController.cs` | REST endpoints — full table below. Admin-only. |
+| `Api/ClientScriptController.cs` | Serves `Web/specialtomovie.js` at `GET /SpecialToMovie/ClientScript`. The plugin's **only** `[AllowAnonymous]` route — the browser fetches it before sign-in. Returns a fixed embedded asset, reflects nothing from the request. |
+| `Providers/LinkedMovieUrlProvider.cs` | `IExternalUrlProvider` — the "Movie Version" button on a linked special's detail page. |
+| `Providers/LinkedSpecialUrlProvider.cs` | `IExternalUrlProvider` — the "TV Special" button on a linked movie's detail page. |
+| `Providers/CrossLinkUrlBuilder.cs` | Pure string helper holding the details-route shape and the two marker characters. One definition of the URL format. |
+| `Providers/CrossLinkUrlResolver.cs` | Builds the link URL; the only DI-registered piece of the cross-link feature. Always emits a full URL when one can be derived from the in-flight request via `IServerApplicationHost.GetSmartApiUrl`, falling back to the bare hash route when there is no ambient request or the result is not a valid http/https URL. |
+| `Services/ScriptInjectionStartupFilter.cs` | `IStartupFilter` that injects the client `<script>` tag into `index.html` as it is served. Fails open on every path. Runs outside the server's base-URL branch, so it matches the request path by suffix and re-applies the base-URL prefix to the tag it writes. |
+| `Web/specialtomovie.js` | Embedded resource. Progressive enhancement only — reduces each server-rendered link to its hash so the web client navigates in place, and styles it to match the row it sits in. |
+
+**How the link is styled.** The external-links row renders one of two ways: Jellyfin's stock output is
+text links joined by `", "`, while plugins such as Jellyfin Enhanced replace them with brand logo
+tiles. The script reads the row and matches it, rather than picking one and being wrong half the
+time. A row counts as badges when a sibling link renders a picture and no words — an icon *plus*
+text, such as Jellyfin Enhanced's Letterboxd links, is still a text row. In a badge row the link
+becomes a circular tile in Jellyfin's blue-to-purple carrying two interlocking rings, keeps its
+caption as `title`/`aria-label`, drops the one dangling `", "` separator, and moves to the end of the
+row; in a text row it is left as plain text, in place. The detection is behavioural on purpose: it
+names no plugin and no CSS class, so it neither requires Jellyfin Enhanced nor breaks when it renames
+anything.
+
+**Why there is no "link style" setting.** The two URL forms suit different clients: a native app can only follow a full URL, while in the web client a full URL opens a new tab and reloads the entire app. Rather than making the user choose wrong, the server always emits the full URL and the client script rewrites it to the hash form in the browser. The rewrite is deliberately **not** conditional on the URL being same-origin — these links always point at an item on the server that served the page, so the hash is always correct from there, and that remains true when a reverse proxy hands the server a host name the browser cannot resolve, which is precisely the case a same-origin test would get wrong.
 
 ## Data model
 
@@ -111,6 +138,8 @@ CreatedUtc / UpdatedUtc  DateTime  set by PairStore.Upsert
 
 `GetAll()`, `GetById(Guid)`, `GetByEpisodeId(Guid)`, `GetByMovieId(Guid)`, `GetByHardLinkPath(string)`, `ExistsForEpisode(Guid)`, `Upsert(LinkedPair)`, `UpsertMany(IEnumerable<LinkedPair>)`, `Remove(Guid)`, `RemoveMany(IEnumerable<Guid>)`, `Clear() -> int`.
 
+Lookups are dictionary-backed, not scans: `_byEpisodeId`, `_byMovieId`, `_byHardLinkPath` (case-insensitive) and `_positionById`. All four are discarded and rebuilt wholesale by `RebuildIndexes()` after every mutation and once after load, rather than maintained incrementally — callers mutate the live `LinkedPair` they were handed *before* calling `Upsert`, so the previous key is already gone by then and cannot be evicted by key. The rebuild is O(n) against a `Save()` that is already O(n) plus disk I/O. `GetByHardLinkPath(null)` now returns `null`; the old `List.Find` matched the first pair with no hard link path.
+
 Persistence: single JSON file (`pairs.json`), `lock (_lock)` around all reads/writes (in-memory `List<LinkedPair>` is the source of truth, disk is a mirror). Every `Save()`: (1) copies current file to `pairs.backup.json` via temp+rename, (2) writes new content to `pairs.json.tmp`, then atomic `File.Move(overwrite: true)` to `pairs.json` — so a crash mid-write never corrupts the live file. On load, a `JsonException` triggers automatic restore from the backup file; if the backup is also corrupt, starts empty (logged as error, not a silent swallow).
 
 ## Configuration model (`PluginConfiguration.cs`)
@@ -131,10 +160,19 @@ Persistence: single JSON file (`pairs.json`), `lock (_lock)` around all reads/wr
 | `TwoWayDeletion` | `false` | Requires `AutoDeleteOnRemoval`. Deleting the *movie* also deletes the original *episode* file (deleting the episode always cascades to the movie regardless of this flag). |
 | `WatchStatusOnly` | `false` | If true, `WatchSyncService` only mirrors `Played`/`PlayCount`/`IsFavorite` — skips `PlaybackPositionTicks`/`LastPlayedDate`. Works around duplicate Continue-Watching entries (Jellyfin can't dedupe two independent items). |
 | `MetadataCacheDays` | `7` | TTL for `ApiResponseCache` entries. `<= 0` conceptually means "never expire" per the cache's own logic, though the UI likely never sets that. |
+| `ShowCrossLinks` | `true` | Master switch for the detail-page cross-link buttons. Read per request by both `IExternalUrlProvider`s and by the startup filter. |
+
+`ShowCrossLinks` is the whole of this feature's UI: one checkbox in the General section. The button
+captions ("Movie Version", "TV Special"), the URL form, and script injection are **not** surfaced, by
+deliberate removal rather than omission — see the note under `Web/specialtomovie.js` above and the
+as-built section of the cross-link plan.
+| `InjectClientScript` | `true` | Whether `ScriptInjectionStartupFilter` rewrites `index.html` to add the client script tag. **Not surfaced in the config UI** — it is the escape hatch if the middleware ever misbehaves, editable in the stored plugin configuration. Off leaves the links working as plain text that opens a new tab. |
 
 `LibraryMapping`: `SourceLibraryId` (Guid), `DestinationLibraryId` (Guid), `DestinationPath` (string, resolved from the destination library's root folder at runtime if empty), `Enabled` (bool). Source and destination can be the **same** library ID for mixed-content libraries.
 
 `ForceLinkEntry`: `EpisodeKey` (string — `"SeriesName S00E##"` or a Jellyfin episode item GUID), `MovieTitle` (string — see resolution rules next).
+
+`IgnoreList` entries (matched by `SpecialDetectionService.IsIgnored`, the single matcher shared by the detection path and `EnforceIgnoreList`) accept four forms, all compared case-insensitively after trimming: an episode key `"SeriesName S00E##"`, an episode item GUID, a **series name**, or a **series item GUID**. The last two ignore every special in that series. The forms share one list unambiguously because an episode key always carries the `S00E` suffix and IDs are GUIDs.
 
 ### Force-link `MovieTitle` resolution (`SpecialDetectionService.ParseForcedMovie` + caller logic)
 
@@ -250,16 +288,18 @@ Pair is always removed from `PairStore` **before** the cascading delete, specifi
 
 ### API-triggered deletion (`SpecialToMovieController`)
 
-- `POST RemoveAllLinks` — for every non-`IsExistingMovie` pair, deletes the movie item+files via Jellyfin, then **resets the pair to `DryRun`** (clears `HardLinkPath`/`MovieItemId`/`ErrorMessage`) rather than deleting the pair record — so a subsequent scan recreates everything without re-running lookups. Original episode files and pre-existing-movie pairs are never touched.
+- `POST RemoveAllLinks` — for every non-`IsExistingMovie` pair, **resets the pair to `DryRun`** first (clears `HardLinkPath`/`MovieItemId`/`ErrorMessage`) rather than deleting the pair record — so a subsequent scan recreates everything without re-running lookups — and only then deletes the movie items+files via Jellyfin. Original episode files and pre-existing-movie pairs are never touched.
 - `POST ClearDatabase` — wipes `PairStore` entirely (does **not** touch any files on disk — just forgets the pairing metadata).
-- `POST RemoveForceLinkedPairs` — removes pairs matching given episode keys (parsed from `EpisodePath`, format `"{seriesFolder} S00E{n}"`, or by item GUID), deleting the movie side first unless `IsExistingMovie`.
-- `POST RemovePair` — removes a single pair by ID from the store only (no file deletion).
+- `POST RemoveForceLinkedPairs` — removes pairs matching given episode keys (parsed from `EpisodePath`, format `"{seriesFolder} S00E{n}"`, or by item GUID), then deletes the movie side unless `IsExistingMovie`.
+- `POST RemovePair` — removes a single pair by ID. Deletes the movie item+files as well **only** when the request sets `DeleteMedia` and the pair is not `IsExistingMovie`. The config page sets that flag when `AutoDeleteOnRemoval` is enabled and the selection contains at least one plugin managed pair with a `MovieItemId`, and says so in the confirmation; cancelling the confirmation removes nothing.
+
+**Ordering rule — do not break it.** Every one of these paths removes the pair from `PairStore`, or persists it with `MovieItemId` cleared, *before* handing the item to `ILibraryManager.DeleteItem`. Jellyfin raises `ItemRemoved` for that deletion and `LibraryEventHandler.OnItemRemoved` will match a still-present pair, read it as a user-initiated removal, and cascade into the original episode file when `AutoDeleteOnRemoval` and `TwoWayDeletion` are both on. This was a live defect across four call sites until the 2026-08-24 audit.
 
 None of the destructive paths above ever walk the filesystem blindly — they only ever act on paths already tracked in `PairStore`, and always go through Jellyfin's own `ILibraryManager.DeleteItem`/`ISubtitleManager.DeleteSubtitles` rather than raw `File.Delete`.
 
 ## REST API (`Api/SpecialToMovieController.cs`)
 
-Route prefix `/SpecialToMovie`, every endpoint requires `Policies.RequiresElevation` (admin auth).
+Route prefix `/SpecialToMovie`. Every endpoint in `SpecialToMovieController` requires `Policies.RequiresElevation` (admin auth). The one exception in the plugin is `GET /SpecialToMovie/ClientScript` in `ClientScriptController`, which is `[AllowAnonymous]` because the browser fetches it before sign-in.
 
 | Method & route | Body | Effect |
 |---|---|---|
@@ -301,6 +341,9 @@ Both are visible/runnable from Jellyfin's own Scheduled Tasks dashboard, and the
 - `AUDIT.md`, `HANDOFF.md`, `IDEAS.md`, and `CLAUDE.md` live in `agentic/` **inside the repo**, so they are version controlled and are captured by release commits alongside code. That also makes them **public**: never write credentials, absolute local paths, hostnames, IP addresses, or anything else machine-specific into them. Their history before the move into the repo is not in `git log`.
 - Mutable config lists (`LibraryMappings`, `ForceLinks`, `IgnoreList`) are snapshotted into an immutable `ConfigSnapshot` at the start of any scan to avoid races with a concurrent config save — follow this pattern if you add new scan-time logic that iterates them.
 - `Plugin.Instance` can theoretically be `null` very early in startup; nearly every service null-checks it and no-ops rather than throwing.
+- **A pair must leave `PairStore`, or stop pointing at the item, before that item is passed to `ILibraryManager.DeleteItem`.** Otherwise Jellyfin's `ItemRemoved` event reaches `LibraryEventHandler`, which sees a live pair, treats the deletion as user-initiated, and cascades into the original episode file when `AutoDeleteOnRemoval` + `TwoWayDeletion` are on. Four call sites got this wrong until the 2026-08-24 audit; see the ordering rule under "API-triggered deletion".
+- **The script-injection filter runs *outside* Jellyfin's base-URL branch.** `Startup.Configure` wraps the entire pipeline in `app.Map(config.BaseUrl, ...)`, and an `IStartupFilter` is invoked before that, so the filter sees the un-stripped path (`/jellyfin/web/index.html`) and an empty `PathBase`. That is why `IsIndexRequest` matches on a *suffix*, and why the injected `src` has to be re-prefixed by `GetBasePrefix` — `MapControllers` also lives inside that branch, so a root-relative `src` can never reach the controller on a base-URL install. The prefix is taken off the request line, so it is validated against a plain-path whitelist before being written into the tag rather than escaped.
+- **Nothing in the cross-link feature may throw.** The two `IExternalUrlProvider`s are constructed by Jellyfin's part discovery, where a constructor throw calls `FailPlugin` and disables the whole plugin; `Name` is read at startup during the provider sort as well as per request; and `GetExternalUrls` runs inside the item-detail DTO pipeline, where a throw breaks the entire response for that item. `DtoService` calls `.ToArray()` on the result, so a `try`/`catch` inside a `yield return` iterator would never fire — the providers return materialised arrays for exactly this reason.
 - API keys are always user-entered through the config UI — never hardcoded, never logged (URLs are stripped of `api_key=` before being used as cache keys or appearing in TMDB debug logs).
 
 ## Release process, versioning, and audits

@@ -11,6 +11,7 @@ Manual hard links solve the file deduplication problem, but **watch status still
 ## Features
 
 - **Automatic detection** — identifies Season 0 episodes that are also movies using TMDB and TVDB cross-referencing
+- **Cross-link buttons** — jump between a linked special and its movie version straight from the item's detail page
 - **Hard links** — no disk space wasted, same file with two directory entries
 - **Bidirectional watch sync** — mark the movie as watched and the episode updates too, and vice versa
 - **Subtitle sync** — hard links external subtitle files between paired items, syncs additions and removals bidirectionally
@@ -104,6 +105,8 @@ Once you're satisfied with the detected matches, **uncheck "Dry run mode"** and 
 | Default (auto-delete off) | Removing an episode or movie removes the pair from the database. Hard link folders stay on disk until manually cleaned up. |
 | Auto-delete on | Removing an episode deletes its linked movie folder. Removing a movie deletes its linked folder (episode untouched). |
 | Auto-delete + two-way | Removing either item deletes both the hard link folder and the original episode file. |
+
+Removing pairs from the pairs table deletes their plugin managed movie items and files only when "Remove plugin managed items automatically" is enabled — otherwise it just drops the database entries — and cancelling the confirmation does nothing either way.
 
 The **Remove All Hard Links** button in the config page deletes all plugin-created folders. Pre-existing movie links and original episode files are never touched by this action.
 

@@ -72,8 +72,7 @@ public class SpecialDetectionService
 
         var episodeKey = FormatEpisodeKey(episode);
 
-        if (snapshot.IgnoreList.Contains(episodeKey, StringComparer.OrdinalIgnoreCase) ||
-            snapshot.IgnoreList.Contains(episode.Id.ToString(), StringComparer.OrdinalIgnoreCase))
+        if (IsIgnored(snapshot.IgnoreList, episode, episodeKey))
         {
             _logger.LogDebug("Episode {Key} is in ignore list, skipping", episodeKey);
             return;
@@ -563,6 +562,60 @@ public class SpecialDetectionService
         return $"{seriesName} S00E{episodeNumber}";
     }
 
+    /// <summary>
+    /// Decides whether an episode is covered by the ignore list.
+    /// </summary>
+    /// <remarks>
+    /// An entry matches an episode by its key ("Series Name S00E01") or its Jellyfin item ID, and
+    /// matches every episode of a series by the series name or the series' Jellyfin item ID. All
+    /// four forms share one list, which is unambiguous because an episode key always carries the
+    /// S00E suffix and IDs are GUIDs.
+    /// </remarks>
+    /// <param name="ignoreList">The configured ignore list.</param>
+    /// <param name="episode">The episode being considered.</param>
+    /// <param name="episodeKey">The episode's formatted key.</param>
+    /// <returns>True if the episode should be skipped.</returns>
+    private static bool IsIgnored(List<string> ignoreList, Episode episode, string episodeKey)
+    {
+        if (ignoreList.Count == 0)
+        {
+            return false;
+        }
+
+        var episodeId = episode.Id.ToString();
+        var seriesName = episode.SeriesName;
+        var seriesId = episode.SeriesId == Guid.Empty ? null : episode.SeriesId.ToString();
+
+        foreach (var entry in ignoreList)
+        {
+            if (string.IsNullOrWhiteSpace(entry))
+            {
+                continue;
+            }
+
+            var trimmed = entry.Trim();
+
+            if (string.Equals(trimmed, episodeKey, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(trimmed, episodeId, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            if (!string.IsNullOrEmpty(seriesName) &&
+                string.Equals(trimmed, seriesName, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            if (seriesId != null && string.Equals(trimmed, seriesId, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private static MovieMatch? ParseForcedMovie(string value)
     {
         var trimmed = value.Trim();
@@ -639,6 +692,7 @@ public class SpecialDetectionService
     {
         var pairs = _pairStore.GetAll();
         var toRemove = new List<Guid>();
+        var toDelete = new List<Guid?>();
 
         foreach (var pair in pairs)
         {
@@ -649,27 +703,33 @@ public class SpecialDetectionService
             }
 
             var episodeKey = FormatEpisodeKey(episode);
-            var isIgnored = snapshot.IgnoreList.Contains(episodeKey, StringComparer.OrdinalIgnoreCase) ||
-                            snapshot.IgnoreList.Contains(pair.EpisodeItemId.ToString(), StringComparer.OrdinalIgnoreCase);
 
-            if (!isIgnored)
+            if (!IsIgnored(snapshot.IgnoreList, episode, episodeKey))
             {
                 continue;
             }
 
             if (autoDelete && !pair.IsExistingMovie)
             {
-                DeleteLinkedMovieItem(pair.MovieItemId);
+                toDelete.Add(pair.MovieItemId);
             }
 
             toRemove.Add(pair.Id);
             _logger.LogInformation("Removed pair for ignored episode {Key} (pair {PairId})", episodeKey, pair.Id);
         }
 
+        // Drop the pairs before deleting the movies. Jellyfin raises ItemRemoved for each deleted
+        // movie, and the handler treats a still-present pair as a user-initiated removal, which
+        // would cascade into the original episode whenever two-way deletion is enabled.
         if (toRemove.Count > 0)
         {
             _pairStore.RemoveMany(toRemove);
             _logger.LogInformation("Ignore list enforcement removed {Count} pairs", toRemove.Count);
+        }
+
+        foreach (var movieItemId in toDelete)
+        {
+            DeleteLinkedMovieItem(movieItemId);
         }
     }
 

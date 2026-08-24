@@ -2,9 +2,9 @@
 
 ## High Priority
 
-- **Cross-link buttons between paired special and movie** — Effort: Medium (Phase 1 ~2h, Phase 2 ~half day)
-  - A button in the external-links row on an item's detail page (next to IMDb / TMDB / TVDB) that jumps to the linked counterpart: a Season 0 special gets a **Movie Version** button, the paired movie gets a **TV Special** button. Also wants to look good alongside [Jellyfin Enhanced](https://github.com/n00bcodr/Jellyfin-Enhanced) buttons — though JE is **not** required for any part of this.
-  - Full research, design, and implementation plan: [`plans/cross-link-buttons.md`](plans/cross-link-buttons.md).
+- **Cross-link buttons between paired special and movie** — DONE (unreleased)
+  - A button in the external-links row on an item's detail page (next to IMDb / TMDB / TVDB) that jumps to the linked counterpart: a Season 0 special gets a **Movie Version** button, the paired movie gets a **TV Special** button.
+  - Shipped all three phases plus the `PairStore` lookup indexes. Full research, design, decisions, and the audit trail: [`plans/cross-link-buttons(DONE).md`](plans/cross-link-buttons%28DONE%29.md).
 
 - **Per-library primary metadata provider** — Effort: Medium (half day)
   - Allow each library mapping to override the global primary metadata provider. Best use case: anime libraries should use anime-focused metadata sources (e.g. TVDB, which has better anime coverage), while live-action TV libraries use TMDB. Currently only a single global primary provider is supported.
@@ -18,11 +18,11 @@
 - **Sync only watched/unwatched status (not playback position)** — DONE (v1.0.12)~~
   - ~~Added "Only sync watched/unwatched status" checkbox. When enabled, only Played/PlayCount/IsFavorite sync — PlaybackPositionTicks and LastPlayedDate are skipped, preventing Continue Watching duplicates.~~
 
-- **Add the ability to add an entire series to the ignore list**
-  - Allow a series jellyfin item id or series name to be put into the ignore list feild to ignore that entire tv series.
+- **Add the ability to add an entire series to the ignore list** — DONE (unreleased)
+  - The ignore list now accepts a series name or a series Jellyfin item ID alongside the existing episode key and episode item ID forms, and ignores every special in that series. Both the detection path and ignore-list enforcement share one matcher (`SpecialDetectionService.IsIgnored`).
 
-- **Change remove selected confirmation dialogue to ask to remove media**
-  - If the user has "Remove plugin managed items automatically" enabled, then clicking the button to remove a pair from the database should prompt a dialogue asking the user if they would like the plugin managed hard link item to be removed as well, with a yes or no confirmation.
+- **Change remove selected confirmation dialogue to ask to remove media** — DONE (unreleased)
+  - With "Remove plugin managed items automatically" enabled, the remove-selected confirmation now says the plugin managed movie items and their files will be deleted along with the pairs, and confirming does both. With it disabled the pairs are removed on their own, as before. Cancelling is always a no-op. `RemovePair` takes a `DeleteMedia` flag and refuses it for pre-existing movies.
 
 ## Medium Priority
 

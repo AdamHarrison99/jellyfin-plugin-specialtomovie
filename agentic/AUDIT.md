@@ -37,6 +37,228 @@ technical, none personal. The only matches returned were the known-acceptable on
 ---
 ---
 
+## Audit: 2026-08-24 (Session 16 — Cross-link settings removal, badge artwork, script delivery)
+
+**Scope**: Everything changed after the Session 15 audit, all of it inside the cross-link feature and none of it released:
+
+1. **Settings removed.** `CrossLinkUrlStyle`, `MovieLinkLabel` and `SpecialLinkLabel` are gone. `CrossLinkUrlResolver` now always emits the full URL when one can be derived and the client script reduces it to a hash in the browser; the captions are constants on the two providers. The "Detail Page Links" section collapsed into a single checkbox in **General**.
+2. **The link became a badge.** `Web/specialtomovie.js` gained an inline SVG tile, `rowIsBadges`, `dropSeparator` and the end-of-row placement, applied only when the row it joins is already a row of brand badges.
+3. **Script delivery** — the machinery the above two lean on: `ScriptInjectionStartupFilter` and `ClientScriptController`.
+
+**Triggered by**: User request, "audit + fix + verify".
+
+---
+
+### Confirmed Issues
+
+#### 1. The client script never loaded on a base-URL install — MEDIUM — fixed
+
+**Where**: `Services/ScriptInjectionStartupFilter.cs`.
+
+The injected tag was `<script src="/SpecialToMovie/ClientScript">` — root-relative, with no base-URL prefix. `Startup.Configure` wraps the whole pipeline in `app.Map(config.BaseUrl, ...)`, and `MapControllers` lives inside that branch, so on a server configured with a base URL the browser asked for `/SpecialToMovie/ClientScript`, outside the branch, and got a 404. The links kept working as plain text, so nothing looked broken — the badges, the in-app navigation and the row matching simply never appeared, with no error anywhere to explain it.
+
+The filter already knew about base URLs in one direction: an `IStartupFilter` is invoked *before* `app.Map`, so it sees the un-stripped path and an empty `PathBase`, which is why `IsIndexRequest` matches on a suffix. Only the outbound half was missing.
+
+**Resolution**: `GetBasePrefix` derives the prefix from the matched request path and the tag is written as `{prefix}/SpecialToMovie/ClientScript`. The prefix comes off the request line and lands in an HTML attribute, so it is checked against a plain-path whitelist (ASCII alphanumerics, `/-._~`, no `..`) and **discarded rather than escaped** if it fails. There is no SPA fallback in the pipeline, so a crafted path cannot reach the injection branch today; the whitelist is what keeps that true if one is ever added.
+
+#### 2. The script was re-read per request and its ETag did nothing — LOW — fixed
+
+**Where**: `Api/ClientScriptController.cs`.
+
+Every load of the web app called `GetManifestResourceStream` and read the asset into a fresh string. The response carried a version-stamped `ETag`, but MVC does not act on one by itself: the conditional request came back, was ignored, and the full body was sent again. There was also no `Cache-Control`, leaving the asset to heuristic caching — which for a versioned file with no `Last-Modified` is both unpredictable and the wrong failure mode, since a stale copy survives a plugin upgrade.
+
+**Resolution**: the asset is read once into a `static Lazy<string?>` (it is embedded in the assembly and cannot change while the process lives), `If-None-Match` is compared against the ETag and answered with a 304, and `Cache-Control: no-cache` is set so the browser revalidates instead of guessing. The common case is now a conditional request rather than the whole script.
+
+#### 3. Two XML doc comments described settings that no longer exist — LOW — fixed
+
+`CrossLinkUrlBuilder.Details` still spoke of "the configurable button captions" and `CrossLinkUrlResolver`'s constructor parameter of "absolute mode". Both were accurate when written and survived the settings removal. The security-relevant half of the first comment — that only a GUID, the system ID and a marker may be interpolated, because the web client does not escape `Url` — is intact and still correct. The plan document keeps the old names deliberately: it is a historical record, and its as-built table reconciles them.
+
+---
+
+### Design Points Verified (no change needed)
+
+- **`IHttpContextAccessor` is registered by the host.** `CrossLinkUrlResolver` cannot be constructed without it, and the URL providers are built by part discovery where a constructor throw calls `FailPlugin` and disables the entire plugin — so this is worth being sure about rather than assuming. It appears nowhere in `MediaBrowser.Controller` or `MediaBrowser.Common`, but Jellyfin's `Startup.ConfigureServices` calls `services.AddHttpContextAccessor()` directly. A defensive `TryAdd` was added during this audit and then reverted: redundant code carrying a comment about a risk that does not exist is worse than no code.
+- **The web-client selectors match what jellyfin-web actually renders.** `renderLinks` sets `.itemExternalLinks` innerHTML to `links.join(', ')`, so the anchors are direct children separated by literal `", "` text nodes — the model `dropSeparator` and the harness are built on. The view root is `<div id="itemDetailPage" ... class="page libraryPage itemDetailPage ...">`, so `#itemDetailPage:not(.hide)` resolves. `.itemExternalLinks` only carries `hide` when it is empty, so it can never be the element that suppresses our own link.
+- **Stripping `Accept-Encoding` really does prevent compression.** `UseResponseCompression` is registered *inside* the base-URL branch, i.e. inside this filter, so the header is already gone when it runs. Removing the response's `ETag`/`Last-Modified` after rewriting is likewise necessary and sufficient — the host sets `Cache-Control: no-cache` on `index.html` itself.
+- **The `MutationObserver` cannot loop.** The upgrade pass mutates class, attributes and child order, all of which the observer watches; the pass those mutations schedule matches nothing, because the selector excludes `[data-stm-upgraded]`, and so mutates nothing. It settles after one no-op run.
+- **Removing settings did not orphan their storage.** `ShowCrossLinks` is the only cross-link setting in the UI; `InjectClientScript` remains stored but unlisted, and survives a save because the config page mutates the fetched configuration object rather than rebuilding it.
+- **The deletion-ordering invariant from Session 15 still holds.** Re-checked mechanically across all six methods that delete media.
+
+---
+
+### Verification
+
+| Check | Result |
+| --- | --- |
+| `dotnet build -c Release --no-incremental` | 0 warnings, 0 errors |
+| Reflection harness against the built DLL — 34 assertions covering `GetBasePrefix`, `IsIndexRequest`, the emitted tag, the embedded resource name, the cached script and the ETag | 34/34 pass |
+| Injected tag stays a single element for hostile paths (markup, quotes, angle brackets, spaces, newlines, non-ASCII, `%`, `..`) | Pass — prefix dropped, tag has exactly two quotes and one element |
+| Client-script harness against a DOM stub, 31 assertions (badge row vs text row, separator handling, reordering, stale reset, foreign links) | 31/31 pass |
+| `node --check` on `Web/specialtomovie.js` and the `configPage.html` script block | Pass |
+| Static ordering check: store mutation precedes media deletion in all six deleting methods | Pass |
+| `renderLinks`, the detail view root element, and the React tree, read from jellyfin-web `master` | Pass — external links are still rendered only by the legacy controller |
+| Line endings across all tracked and new files | 50 LF-only; `README.md` and `.gitignore` hold CRLF in the working tree after editor saves. `core.autocrlf=true` normalises both on commit — confirmed by `README.md` showing 3 changed lines rather than 190 |
+
+**Not verified** — needs a running server, and carried forward from Session 15: a base-URL install end to end; two `IStartupFilter`s (this one and Jellyfin Enhanced) buffering the same `index.html` in both install orders; behaviour behind a reverse proxy; the emitted full URL in non-web clients.
+
+**Future risk, not a finding**: jellyfin-web is migrating to React, and the detail view now lives under `src/apps/legacy/`. External links are still rendered only there, so both the selector and the `", "`-separated structure hold today; a React detail page would change the whole client-side half of this feature, not just the selector.
+
+---
+
+### PII Sweep
+
+**Ran** over all 53 files — 44 tracked ones that still exist plus the 9 new untracked ones — using the patterns in [`CLAUDE.md`](CLAUDE.md#pii--documentation-sweep). **Clean.**
+
+- Checks 1–2 (drive-rooted and UNC paths, home directories, email addresses): no findings. The matches returned were regex escape sequences in source, relative MSBuild paths in the `.csproj`, the sweep patterns matching their own documentation, and the known-acceptable Jellyfin install path in `README.md`.
+- Check 3 (this machine's username, hostname, git identity): matched only the project's own GitHub owner handle in `manifest.json`, `build.yaml`, `README.md` and `agentic/CLAUDE.md` — already on the known-acceptable list as the project's public identity.
+- Check 4 (dotted quads): 20 distinct matches, all assembly or ABI versions.
+- Check 5 (comment read-through): every comment line in the five files touched this session was read individually — all technical, none personal. The badge comment block was checked specifically for first-person narration and design-session chatter.
+
+---
+
+### Previous Audit Items — Status Check
+
+No open item from Sessions 1–15 was reopened. Finding 1 above is newly identified: Session 15 audited the filter's fail-open behaviour and its response handling, but never asked what the injected `src` resolves to on a server that is not hosted at the root.
+
+---
+---
+
+## Audit: 2026-08-24 (Session 15 — Cross-link buttons, series ignore, deletion prompt)
+
+**Scope**: Three features implemented in one pass and audited together. Unreleased — no version bump yet.
+
+1. **Cross-link buttons** — all three phases of [`plans/cross-link-buttons(DONE).md`](plans/cross-link-buttons%28DONE%29.md) plus the `PairStore` lookup indexes. New: `Providers/` (4 files), `Api/ClientScriptController.cs`, `Services/ScriptInjectionStartupFilter.cs`, `Web/specialtomovie.js`. Modified: `PairStore`, `PluginConfiguration` (two new properties, `ShowCrossLinks` and `InjectClientScript`), `PluginServiceRegistrator`, `configPage.html`, `.csproj`, `README.md`.
+2. **Ignore an entire series** — `SpecialDetectionService.IsIgnored`, one matcher shared by the detection path and ignore-list enforcement; the list now accepts a series name or series item ID alongside the two episode forms.
+3. **Remove-selected honours the auto-delete setting** — `RemovePair` takes a `DeleteMedia` flag. With `AutoDeleteOnRemoval` on, the confirmation states that the pairs and their plugin managed movie items will be removed together and confirming does both; with it off, only the pairs are removed. Cancelling is a no-op in both cases.
+
+**Triggered by**: User request to implement all three, then "audit + fix + verify". Issues 3 and 4 come from a second audit pass the same day, after the removal dialogue was reworked so that Cancel is always a no-op and after the plan document was renamed.
+
+---
+
+### Confirmed Issues
+
+#### 1. ItemRemoved cascade deletes the original episode file — HIGH — fixed
+
+**Where**: `Api/SpecialToMovieController.cs` (`RemovePair`, `RemoveAllLinks`, `RemoveForceLinkedPairs`), `Services/SpecialDetectionService.cs` (`EnforceIgnoreList`), `Tasks/CleanupTask.cs` (`ValidatePair`).
+
+Each of these deleted a movie item through `LibraryManager.DeleteItem` **while the pair was still in the store**. Jellyfin raises `ItemRemoved` for that deletion; `LibraryEventHandler.OnItemRemoved` matches the still-present pair by movie ID, reads it as a user-initiated removal, and with `AutoDeleteOnRemoval` **and** `TwoWayDeletion` both enabled calls `DeleteItemWithFiles(pair.EpisodeItemId)` — deleting the user's original episode file in response to an action that never asked for it.
+
+`LibraryEventHandler` already documents the correct ordering in a comment ("Remove pair first to prevent cascading events"); these five call sites did not follow it.
+
+Only `RemovePair` is new code — the new `DeleteMedia` flag put a deletion on that path for the first time. The other four are pre-existing and were never flagged in Sessions 1–14, because no earlier audit traced a deletion call back into the plugin's own event handler. `ValidatePair` is not actually reachable: its branch only runs once the episode is already gone. It was reordered for consistency.
+
+Severity is raised by feature 2 above: an ignore-list entry now covers a whole series, so a single edit that previously affected one special can drive this path across every special in a series at once.
+
+**Resolution**: all five sites now remove the pair — or persist it with `MovieItemId` cleared — **before** any media is deleted. `RemoveAllLinks` and `RemoveForceLinkedPairs` collect the item IDs, commit the store change, then delete in a second loop. Verified by a static check that the first `_pairStore` mutation precedes the first delete call in every one of the six methods that delete media.
+
+**Rule for future work**: a pair must leave the store, or stop pointing at the item, before that item is handed to `LibraryManager.DeleteItem`.
+
+#### 2. Remove-selected prompt overcounted deletable items — LOW — fixed
+
+**Where**: `Configuration/configPage.html`, `removeSelectedPairs`.
+
+The count offered in the new prompt ("Also delete the N plugin managed movie item(s)…") included pairs with no `MovieItemId` — dry-run and pending pairs, which have no item to delete. A selection containing only such pairs would offer a deletion that silently does nothing. **Resolution**: the filter now also requires `p.MovieItemId`, so an all-dry-run selection falls through to the standard confirmation instead.
+
+#### 3. Unsaved auto-delete checkbox could drive a real deletion — MEDIUM — fixed
+
+**Where**: `Configuration/configPage.html` (`updateTwoWayState`, `removeSelectedPairs`), `Api/SpecialToMovieController.cs` (`RemovePair`).
+
+The config page tracked "Remove plugin managed items automatically" from the **live checkbox**, updated on every `change` event, while `RemovePair` trusted the client's `DeleteMedia` flag outright and never consulted the stored configuration. Ticking the checkbox and removing pairs *without saving* therefore deleted movie items and their files even though the saved configuration said to keep them — an irreversible action driven by a setting the user had not committed to. The opposite order (unticking without saving) failed safe.
+
+**Resolution**, both sides:
+
+- `RemovePair` now honours `DeleteMedia` only when the **stored** `AutoDeleteOnRemoval` is true, alongside the existing `IsExistingMovie` guard. The API can no longer be talked into a deletion the saved configuration forbids, whatever the caller sends.
+- The page's `autoDeleteOnRemoval` is now set from the saved configuration only — once on load and again after a save succeeds — never from the checkbox. Otherwise the prompt would promise a deletion the server would then refuse.
+
+#### 4. Renaming the plan document broke three links — LOW — fixed
+
+**Where**: `agentic/AUDIT.md` (2), `agentic/IDEAS.md` (1).
+
+`plans/cross-link-buttons.md` was renamed to `plans/cross-link-buttons(DONE).md`. Beyond the stale targets, the new name contains parentheses, which terminate a markdown link early and cannot simply be pasted in. **Resolution**: all three now point at `plans/cross-link-buttons%28DONE%29.md`, percent-encoded. A link checker over every doc — internal anchors and relative file targets, with percent-decoding — passes across all eight.
+
+
+#### 5. Button icon rendered black on every theme — LOW — fixed, then superseded
+
+**Where**: `Web/specialtomovie.js`, `injectStyles`.
+
+The original chain-link icon was drawn with `stroke="currentColor"` inside an SVG data URI used as
+`background-image`. An SVG loaded as an image is an independent document that cannot see the host
+page's CSS, so `currentColor` resolved to its own initial value — black — rather than inheriting the
+button's text colour. On Jellyfin's default dark theme that is a black icon on a dark background.
+
+Fixed first by painting the glyph through a CSS mask with `background-color: currentColor`. The link
+was then redesigned as a self-coloured badge (below), which removes the dependency on the host's
+colour altogether. Harness assertions keep `currentColor` out of the data URI either way.
+
+#### 6. The link did not match the row it sits in — LOW — fixed
+
+**Where**: `Web/specialtomovie.js`, `upgradeLinks`.
+
+The external-links row is rendered one of two ways depending on what else is installed: Jellyfin's
+own stock rendering is text links joined by `", "` ([`renderLinks`](https://github.com/jellyfin/jellyfin-web) builds `links.join(', ')`), while plugins such as Jellyfin
+Enhanced replace them with brand logo tiles. The script styled its link the same way regardless, so
+it was guaranteed to be the odd one out in one of the two — a lone text link among badges, or a lone
+badge among text.
+
+**Resolution**: the script now reads the row and matches it. A row counts as badges when a sibling
+link renders a picture and no words; a link showing an icon *and* text — Jellyfin Enhanced's
+Letterboxd links, for instance — is still a text row. In a badge row the link becomes a circular
+tile in Jellyfin's blue-to-purple carrying two interlocking rings, keeps its caption as `title` and
+`aria-label`, drops the one `", "` separator that would otherwise dangle beside it, and moves to the
+end of the row. In a text row it stays plain text and is left where it is.
+
+Detection is deliberately behavioural rather than a check for a named plugin or CSS class, so it
+neither depends on Jellyfin Enhanced being installed nor breaks when it renames something. Both
+paths are covered by the client-script harness, which models a badge row and a text row.
+
+---
+
+### Design Points Verified (no change needed)
+
+- **Provider construction cannot fail the plugin.** `LinkedMovieUrlProvider` and `LinkedSpecialUrlProvider` are discovered by Jellyfin's own part scan and deliberately not registered in `PluginServiceRegistrator`. Verified by reflection against the built assembly: both are public and concrete, and every constructor parameter (`IPairStore`, `ILibraryManager`, `CrossLinkUrlResolver`, `ILogger<T>`) resolves from the container. A throwing constructor would trigger `FailPlugin` and disable the whole plugin; `Name` is read at startup during the provider sort, so it degrades rather than throws too.
+- **No unescaped user input reaches an href.** The web client escapes `ExternalUrl.Name` but **not** `.Url`. Only a GUID, the server's system ID and a fixed marker character are ever interpolated into the URL, and no part of it is user-supplied; the captions are compile-time constants returned through `Name`, which the client escapes in any case. The resolver validates the `GetSmartApiUrl` result with `Uri.TryCreate` and an http/https scheme check before emitting it, and falls back to the bare hash route on every failure path.
+- **The startup filter fails open.** Non-GET, non-200 and non-HTML responses are never buffered; a downstream exception restores the original body stream and rethrows; a missing `</body>` serves the buffered HTML unchanged. It is on by default and, after the settings were pared back, no longer switchable from the config UI — `InjectClientScript` survives only in the stored configuration. That removes the volunteer-only escape hatch the default-on decision leaned on, which makes the fail-open discipline non-negotiable rather than merely tidy.
+- **The anonymous route is justified.** `SpecialToMovie/ClientScript` is the plugin's only `[AllowAnonymous]` endpoint. The browser requests it while loading the web app, before sign-in, so it cannot require auth. It returns a fixed embedded asset and reflects nothing from the request.
+- **`PairStore` indexes are correct under in-place mutation.** Callers mutate the live `LinkedPair` reference and then call `Upsert`, which defeats incremental key eviction. The wholesale `RebuildIndexes()` that shipped instead makes stale keys structurally impossible. See [`plans/cross-link-buttons(DONE).md` §5.4](plans/cross-link-buttons%28DONE%29.md#54-pairstore-indexes-in-scope-for-this-change).
+- **Accepted limitation, documented**: the buttons are not permission-aware. A user who cannot see the item on the other side of the link still sees the button and lands on an error page. Recorded in `README.md` and in the plan; it mirrors how Jellyfin's own external links behave.
+
+---
+
+### Verification
+
+| Check | Result |
+| --- | --- |
+| `dotnet build -c Release --no-incremental` | 0 warnings, 0 errors |
+| Reflection probe against the built DLL — provider/filter/controller shape, constructor resolvability, embedded resource name | Pass |
+| `PairStore` harness, 19 assertions (index eviction after in-place mutation, null/empty movie IDs, batch upsert, load, clear) | 19/19 pass |
+| Client-script harness against a DOM stub, 14 assertions (both URL forms, marker parsing, target handling, stale-link reset, foreign links untouched) | 14/14 pass |
+| `node --check` on `Web/specialtomovie.js` and the `configPage.html` script block | Pass |
+| Static ordering check: store mutation precedes media deletion in all six deleting methods | Pass |
+| Markdown anchors and relative links across the changed docs | Pass |
+| Line endings across all tracked files | Uniformly LF, unchanged by this work. `README.md` was later saved as CRLF by an editor; `core.autocrlf=true` normalises it, and its diff stays at 3 added lines with no whitespace churn |
+
+**Not verified** — needs a running server, and listed in the plan's testing checklist: behaviour of each URL form in non-web clients; two `IStartupFilter`s (this one and Jellyfin Enhanced) buffering the same `index.html` in both install orders; absolute mode behind a reverse proxy and under a configured base URL.
+
+---
+
+### PII Sweep
+
+**Ran** over all 52 files — 46 tracked plus the 6 new untracked ones — using the patterns in [`CLAUDE.md`](CLAUDE.md#pii--documentation-sweep). **Clean.**
+
+- Checks 1–2 (drive-rooted and UNC paths, home directories, email addresses): no findings. The matches returned were regex escape sequences in source, relative MSBuild paths in the `.csproj`, and the known-acceptable Jellyfin install path in `README.md`.
+- Check 3 (this machine's username, hostname, git identity): no findings.
+- Check 4 (dotted quads): 20 distinct matches, all assembly or ABI versions.
+- Check 5 (comment read-through): every comment line in the six new files read individually — all technical, none personal. The new plan document was additionally checked for scratchpad paths, temp directories, hostnames, ports and first-person narration: none.
+
+---
+
+### Previous Audit Items — Status Check
+
+No open item from Sessions 1–14 was reopened by this change. The `ItemRemoved` cascade above is newly identified, not a regression of a closed finding.
+
+---
+---
+
 ## Audit: 2026-08-04 (Session 14 — Pre-release v1.0.16.0, Jellyfin 12 migration)
 
 **Scope**: Framework/runtime migration only. `TargetFramework` `net9.0` -> `net10.0`; `Jellyfin.Controller`/`Jellyfin.Model` `10.*` -> pinned `12.0.0-rc4`; `AssemblyVersion`/`FileVersion` -> `1.0.16.0`; `build.yaml` `targetAbi`/`framework` corrected; README requirements + build-output path corrected.

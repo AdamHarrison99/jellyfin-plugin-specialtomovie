@@ -51,6 +51,19 @@ public class PluginConfiguration : BasePluginConfiguration
     public bool WatchStatusOnly { get; set; } = false;
 
     public int MetadataCacheDays { get; set; } = 7;
+
+    /// <summary>
+    /// Gets or sets a value indicating whether cross-link buttons are shown on item detail pages.
+    /// Read on every call, so toggling it takes effect without a server restart.
+    /// </summary>
+    public bool ShowCrossLinks { get; set; } = true;
+
+    /// <summary>
+    /// Gets or sets a value indicating whether the client script is injected into the served
+    /// web app. The script upgrades the cross-links into icon buttons that navigate in-app.
+    /// With it off the links still work, but render as plain text and open a new tab.
+    /// </summary>
+    public bool InjectClientScript { get; set; } = true;
 }
 
 /// <summary>

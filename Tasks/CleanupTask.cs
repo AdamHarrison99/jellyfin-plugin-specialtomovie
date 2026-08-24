@@ -194,12 +194,15 @@ public class CleanupTask : IScheduledTask
         {
             _logger.LogInformation("Episode {Id} no longer exists, removing pair {PairId}", pair.EpisodeItemId, pair.Id);
 
+            // Pair first, then media, so the ItemRemoved handler cannot act on a pair that is
+            // already being torn down here.
+            _pairStore.Remove(pair.Id);
+
             if (!dryRunMode && autoDelete && !pair.IsExistingMovie)
             {
                 DeleteItemWithFiles(pair.MovieItemId);
             }
 
-            _pairStore.Remove(pair.Id);
             return;
         }
 

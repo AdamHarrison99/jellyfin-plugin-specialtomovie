@@ -160,6 +160,18 @@
                             </div>
                         </div>
 
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label class="emby-checkbox-label">
+                                <input id="chkShowCrossLinks" type="checkbox" is="emby-checkbox" />
+                                <span>Show cross-link buttons on detail pages</span>
+                            </label>
+                            <div class="fieldDescription">
+                                Adds a "Movie Version" button to a linked special's page that jumps to its
+                                movie, and a "TV Special" button on the movie's page that jumps back, shown
+                                alongside the IMDb / TMDB / TVDB links. Displays as a badge when appropriate.
+                            </div>
+                        </div>
+
                     </div>
 
                     <!-- Deletion Behavior -->
@@ -314,8 +326,10 @@
                     <div class="verticalSection">
                         <h2 class="sectionTitle">Ignore List</h2>
                         <div class="fieldDescription">
-                            Episodes to never link, even if detected as movies.
-                            Format: "SeriesName S00E##" or Jellyfin item ID.
+                            Episodes or whole series to never link, even if detected as movies.
+                            Format: "SeriesName S00E##" or a Jellyfin item ID for a single episode,
+                            or a series name or series Jellyfin item ID to ignore every special in
+                            that series.
                         </div>
                         <div id="ignoreListContainer"></div>
                         <button id="btnAddIgnore" is="emby-button" type="button" class="raised">
@@ -453,7 +467,9 @@
                         page.querySelector('#txtTmdbApiKey').value = config.TmdbApiKey || '';
                         page.querySelector('#txtTvdbApiKey').value = config.TvdbApiKey || '';
                         page.querySelector('#txtMetadataCacheDays').value = config.MetadataCacheDays != null ? config.MetadataCacheDays : 7;
+                        page.querySelector('#chkShowCrossLinks').checked = config.ShowCrossLinks !== false;
 
+                        SpecialToMovieConfig.autoDeleteOnRemoval = config.AutoDeleteOnRemoval === true;
                         SpecialToMovieConfig.updateDryRunBanner(config.DryRunMode);
                         SpecialToMovieConfig.updateTwoWayState(config.AutoDeleteOnRemoval);
                         SpecialToMovieConfig.renderLibraryMappings(config.LibraryMappings || []);
@@ -484,6 +500,7 @@
                         config.TvdbApiKey = page.querySelector('#txtTvdbApiKey').value.trim();
                         var cacheDaysVal = parseInt(page.querySelector('#txtMetadataCacheDays').value, 10);
                         config.MetadataCacheDays = isNaN(cacheDaysVal) ? 7 : cacheDaysVal;
+                        config.ShowCrossLinks = page.querySelector('#chkShowCrossLinks').checked;
 
                         config.LibraryMappings = SpecialToMovieConfig.collectLibraryMappings();
                         var newForceLinks = SpecialToMovieConfig.collectForceLinks();
@@ -497,6 +514,8 @@
                         config.IgnoreList = SpecialToMovieConfig.collectIgnoreList();
 
                         ApiClient.updatePluginConfiguration(SpecialToMovieConfig.pluginUniqueId, config).then(function () {
+                            SpecialToMovieConfig.autoDeleteOnRemoval = config.AutoDeleteOnRemoval === true;
+
                             // Clean up pairs for removed force links
                             if (removedKeys.length > 0) {
                                 ApiClient.ajax({
@@ -699,7 +718,7 @@
                     var input = document.createElement('input');
                     input.type = 'text';
                     input.className = 'ignore-value emby-input';
-                    input.placeholder = 'Episode';
+                    input.placeholder = 'Episode or series';
                     input.value = value || '';
                     input.style.flex = '1';
                     row.appendChild(input);
@@ -734,6 +753,12 @@
                 sortKey: 'created',
                 sortAsc: false,
                 selectedPairIds: new Set(),
+
+                // The *saved* "Remove plugin managed items automatically" setting — updated on load
+                // and after a successful save, deliberately not from the live checkbox. The server
+                // gates deletion on the same stored value, so tracking the unsaved checkbox here
+                // would promise a deletion the server would then refuse.
+                autoDeleteOnRemoval: false,
 
                 loadPairs: function () {
                     ApiClient.ajax({
@@ -1052,15 +1077,33 @@
                 removeSelectedPairs: function () {
                     var ids = Array.from(SpecialToMovieConfig.selectedPairIds);
                     if (ids.length === 0) return;
-                    var msg = 'Remove ' + ids.length + ' selected pair(s) from the database?\n\nHard-linked movie files on disk will NOT be deleted. Use "Remove All Hard Links" to clean up files.';
+
+                    // Only plugin-created movies that actually exist as items can be deleted: a
+                    // pre-existing movie is the user's own library item (and the server ignores the
+                    // flag for those anyway), and a pair still in dry run has no item yet.
+                    var managed = SpecialToMovieConfig.allPairs.filter(function (p) {
+                        return SpecialToMovieConfig.selectedPairIds.has(p.Id) &&
+                            !p.IsExistingMovie && p.MovieItemId;
+                    }).length;
+
+                    // Cancel always means cancel: nothing is removed and nothing is deleted. With
+                    // auto-delete on, confirming removes the pairs and their plugin managed movie
+                    // items together; with it off, confirming removes the pairs only.
+                    var deleteMedia = SpecialToMovieConfig.autoDeleteOnRemoval && managed > 0;
+                    var msg = deleteMedia
+                        ? 'Remove ' + ids.length + ' selected pair(s) from the database and delete the ' +
+                          managed + ' plugin managed movie item(s) and their files from disk?'
+                        : 'Remove ' + ids.length + ' selected pair(s) from the database?\n\nHard-linked movie files on disk will NOT be deleted. Use "Remove All Hard Links" to clean up files.';
+
                     if (!confirm(msg)) return;
+
                     var remaining = ids.length;
                     var failed = 0;
                     ids.forEach(function (pairId) {
                         ApiClient.ajax({
                             type: 'POST',
                             url: ApiClient.getUrl('SpecialToMovie/RemovePair'),
-                            data: JSON.stringify({ PairId: pairId }),
+                            data: JSON.stringify({ PairId: pairId, DeleteMedia: deleteMedia }),
                             contentType: 'application/json',
                             dataType: 'json'
                         }).then(function () {

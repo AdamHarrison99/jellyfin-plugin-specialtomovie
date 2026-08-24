@@ -17,6 +17,7 @@
 
   <ItemGroup>
     <EmbeddedResource Include="Configuration\configPage.html" />
+    <EmbeddedResource Include="Web\specialtomovie.js" />
   </ItemGroup>
 
 </Project>

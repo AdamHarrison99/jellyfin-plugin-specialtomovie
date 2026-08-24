@@ -43,6 +43,16 @@ public class PairStore : IPairStore
     private readonly ILogger<PairStore> _logger;
     private List<LinkedPair> _pairs;
 
+    // Lookup indexes over _pairs. Rebuilt wholesale after every mutation rather than maintained
+    // incrementally: callers mutate the LinkedPair they were handed and then call Upsert, so by
+    // then the pair's previous EpisodeItemId/MovieItemId are already gone and cannot be evicted
+    // by key. Every mutation already pays an O(n) serialise plus disk I/O in Save(), so an O(n)
+    // rebuild costs nothing measurable and removes a whole class of stale-key bugs.
+    private Dictionary<Guid, LinkedPair> _byEpisodeId = new();
+    private Dictionary<Guid, LinkedPair> _byMovieId = new();
+    private Dictionary<string, LinkedPair> _byHardLinkPath = new(StringComparer.OrdinalIgnoreCase);
+    private Dictionary<Guid, int> _positionById = new();
+
     public PairStore(IApplicationPaths applicationPaths, ILogger<PairStore> logger)
     {
         _logger = logger;
@@ -69,6 +79,38 @@ public class PairStore : IPairStore
         }
 
         _pairs = Load();
+        RebuildIndexes();
+    }
+
+    /// <summary>
+    /// Rebuilds every lookup index from <see cref="_pairs"/>. Callers must hold <see cref="_lock"/>.
+    /// First entry wins on a duplicate key, matching the <c>List.Find</c> semantics these indexes
+    /// replaced.
+    /// </summary>
+    private void RebuildIndexes()
+    {
+        _byEpisodeId = new Dictionary<Guid, LinkedPair>(_pairs.Count);
+        _byMovieId = new Dictionary<Guid, LinkedPair>(_pairs.Count);
+        _byHardLinkPath = new Dictionary<string, LinkedPair>(_pairs.Count, StringComparer.OrdinalIgnoreCase);
+        _positionById = new Dictionary<Guid, int>(_pairs.Count);
+
+        for (var i = 0; i < _pairs.Count; i++)
+        {
+            var pair = _pairs[i];
+
+            _byEpisodeId.TryAdd(pair.EpisodeItemId, pair);
+            _positionById.TryAdd(pair.Id, i);
+
+            if (pair.MovieItemId is { } movieId && movieId != Guid.Empty)
+            {
+                _byMovieId.TryAdd(movieId, pair);
+            }
+
+            if (!string.IsNullOrEmpty(pair.HardLinkPath))
+            {
+                _byHardLinkPath.TryAdd(pair.HardLinkPath, pair);
+            }
+        }
     }
 
     public List<LinkedPair> GetAll()
@@ -83,7 +125,7 @@ public class PairStore : IPairStore
     {
         lock (_lock)
         {
-            return _pairs.Find(p => p.Id == pairId);
+            return _positionById.TryGetValue(pairId, out var index) ? _pairs[index] : null;
         }
     }
 
@@ -91,7 +133,7 @@ public class PairStore : IPairStore
     {
         lock (_lock)
         {
-            return _pairs.Find(p => p.EpisodeItemId == episodeItemId);
+            return _byEpisodeId.GetValueOrDefault(episodeItemId);
         }
     }
 
@@ -99,7 +141,7 @@ public class PairStore : IPairStore
     {
         lock (_lock)
         {
-            return _pairs.Find(p => p.MovieItemId == movieItemId);
+            return _byMovieId.GetValueOrDefault(movieItemId);
         }
     }
 
@@ -107,8 +149,9 @@ public class PairStore : IPairStore
     {
         lock (_lock)
         {
-            return _pairs.Find(p =>
-                string.Equals(p.HardLinkPath, hardLinkPath, StringComparison.OrdinalIgnoreCase));
+            return string.IsNullOrEmpty(hardLinkPath)
+                ? null
+                : _byHardLinkPath.GetValueOrDefault(hardLinkPath);
         }
     }
 
@@ -116,7 +159,7 @@ public class PairStore : IPairStore
     {
         lock (_lock)
         {
-            return _pairs.Exists(p => p.EpisodeItemId == episodeItemId);
+            return _byEpisodeId.ContainsKey(episodeItemId);
         }
     }
 
@@ -126,8 +169,7 @@ public class PairStore : IPairStore
         {
             pair.UpdatedUtc = DateTime.UtcNow;
 
-            var index = _pairs.FindIndex(p => p.Id == pair.Id);
-            if (index >= 0)
+            if (_positionById.TryGetValue(pair.Id, out var index))
             {
                 _pairs[index] = pair;
             }
@@ -141,6 +183,7 @@ public class PairStore : IPairStore
                 _pairs.Add(pair);
             }
 
+            RebuildIndexes();
             Save();
         }
     }
@@ -153,8 +196,7 @@ public class PairStore : IPairStore
             {
                 pair.UpdatedUtc = DateTime.UtcNow;
 
-                var index = _pairs.FindIndex(p => p.Id == pair.Id);
-                if (index >= 0)
+                if (_positionById.TryGetValue(pair.Id, out var index))
                 {
                     _pairs[index] = pair;
                 }
@@ -165,10 +207,14 @@ public class PairStore : IPairStore
                         pair.CreatedUtc = DateTime.UtcNow;
                     }
 
+                    // Keep the position map usable for the rest of the batch; a pair appearing
+                    // twice in one call must update in place rather than being appended twice.
+                    _positionById[pair.Id] = _pairs.Count;
                     _pairs.Add(pair);
                 }
             }
 
+            RebuildIndexes();
             Save();
         }
     }
@@ -180,6 +226,7 @@ public class PairStore : IPairStore
             var removed = _pairs.RemoveAll(p => p.Id == pairId);
             if (removed > 0)
             {
+                RebuildIndexes();
                 Save();
             }
         }
@@ -193,6 +240,7 @@ public class PairStore : IPairStore
             var removed = _pairs.RemoveAll(p => idSet.Contains(p.Id));
             if (removed > 0)
             {
+                RebuildIndexes();
                 Save();
             }
         }
@@ -206,6 +254,7 @@ public class PairStore : IPairStore
             if (count > 0)
             {
                 _pairs.Clear();
+                RebuildIndexes();
                 Save();
             }
 
