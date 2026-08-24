@@ -64,8 +64,9 @@ public class ScriptInjectionStartupFilter : IStartupFilter
     /// Returns the base-URL prefix the web app is being served under, or an empty string.
     /// </summary>
     /// <remarks>
-    /// This middleware is registered outermost, ahead of the server's own <c>UsePathBase</c>, so a
-    /// base-URL install still carries its prefix on <see cref="HttpRequest.Path"/> — which is why
+    /// This middleware is registered outermost, ahead of the <c>Map</c> the server wraps its whole
+    /// pipeline in, so a base-URL install still carries its prefix on
+    /// <see cref="HttpRequest.Path"/> and <see cref="HttpRequest.PathBase"/> is empty — which is why
     /// <see cref="IsIndexRequest"/> matches on a suffix. The script tag has to carry the same
     /// prefix: a root-relative <c>src</c> would send the browser to a path the server does not
     /// serve, and the enhancement would silently never load.
