@@ -12,6 +12,7 @@
 │   ├── HANDOFF.md                  ← codebase map, read first in a new session
 │   ├── JellyfinPlugin-SpecialToMovie plan.md   ← original design doc (historical)
 │   ├── plans/                       ← per-feature implementation plans, one file per feature
+│   ├── tools/                       ← reusable tooling — harnesses, probes, build helpers
 │   └── memory/                      ← standing conventions, one rule per file
 ├── README.md                       ← user-facing docs
 ├── manifest.json                   ← Jellyfin plugin manifest (serves as the plugin repository index)
@@ -95,6 +96,7 @@ Before every new version release, perform a full security and efficiency audit o
 4. Verify all file system operations have proper safety checks
 5. Review API endpoints for authorization and input validation gaps
 6. Sweep every tracked file for personally identifying information — see [PII & Documentation Sweep](#pii--documentation-sweep) below
+7. Sweep the scratchpad and every other temporary working directory — see [Scratchpad & Temporary File Sweep](#scratchpad--temporary-file-sweep) below
 
 **Do not commit code or cut a release until all findings have been presented to the user for review.** Present each issue with its location, severity, and proposed resolution. Only proceed after the user approves.
 
@@ -153,6 +155,35 @@ Known-acceptable matches are listed in [`AUDIT.md`](AUDIT.md#known-acceptable-ma
 
 Record the result in `AUDIT.md` under the audit entry **even when the sweep is clean**: that it ran,
 what it covered, and every finding with its resolution.
+
+### Scratchpad & Temporary File Sweep
+
+Step 7 covers the agent's scratchpad directory and anywhere else working files were parked during
+the release cycle — a system temp folder, a throwaway probe project, a cloned reference repository,
+a copy of `agentic/` taken "just in case". None of it is tracked, so the PII sweep above never sees
+it, and it survives the session that created it.
+
+Two rules decide what happens to each thing found:
+
+- **Reusable tooling is promoted, not deleted.** Anything that would be worth running again — a test
+  harness, an ABI or reflection probe, a build or packaging helper, a verification script — moves
+  into [`tools/`](tools/) with a note in that folder's `README.md` saying what it does and how to run
+  it. See [`tools/README.md`](tools/README.md) for what qualifies and the PII rules it must meet
+  first. A harness that is described in `AUDIT.md` but exists nowhere in the repository is the
+  failure this rule prevents.
+- **Everything else is deleted.** In particular, **Jellyfin server binaries or server/user data must
+  never be left behind**: extracted server assembly sets, a real or sample `library.db`, plugin
+  configuration XML, `PairStore` JSON from a live install, API keys, device identifiers, user or
+  media-library listings, and exported logs. The same goes for temporary backups of `agentic/` or of
+  the source tree, stale `bin/`/`obj/` output from probe projects, and cloned third-party
+  repositories, all of which are re-creatable and none of which should outlive their session.
+
+Delete the copy as soon as it has served its purpose rather than waiting for the next audit — the
+sweep is the backstop, not the plan.
+
+Record the result in `AUDIT.md` under the audit entry **even when nothing was found**: what was
+swept, what was promoted into `tools/`, and what was deleted. Name deleted items by kind, never by
+absolute path.
 
 ## Memory
 

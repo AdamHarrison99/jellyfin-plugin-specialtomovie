@@ -15,3 +15,4 @@ exists, and how to apply it.
 - [README after audit](feedback_readme_after_audit.md) — check README against the code after every audit, but never edit it without being asked
 - [PII sweep in every audit](feedback_pii_sweep_in_audit.md) — sweep every tracked file, source comments included, for personal or machine-identifying detail
 - [Cancel means cancel](feedback_cancel_means_cancel.md) — Cancel on any confirmation is a full no-op; never give it a second meaning
+- [Scratchpad hygiene](feedback_scratchpad_hygiene.md) — promote reusable tooling to agentic/tools/; delete server, user and temporary data from scratch directories
