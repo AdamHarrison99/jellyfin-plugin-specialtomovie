@@ -1,6 +1,6 @@
 name: "SpecialToMovie"
 guid: "a1b2c3d4-5678-9abc-def0-123456789abc"
-version: "1.0.17.0"
+version: "1.0.18.0"
 targetAbi: "12.0.0.0"
 framework: "net10.0"
 overview: "Detects TV specials that are also movies, creates hard links, and syncs watch status."
@@ -14,11 +14,9 @@ owner: "AdamHarrison99"
 artifacts:
   - "Jellyfin.Plugin.SpecialToMovie.dll"
 changelog: |
-  - Re-pin Jellyfin.Controller/Jellyfin.Model from 12.0.0-rc4 to the released 12.0.0
-  - Cross-link buttons on the detail page to jump between a linked special and its movie
-  - Ignore list entries can name a whole series
-  - Pair removal prompts differently depending on whether media files are affected
-  - Scheduled task names prefixed with the plugin name
-  - Pair store survives an unwritable or unreadable data file instead of throwing
-  - Escape provider IDs used in TMDB/TVDB request paths
-  - Faster full scan: index episodes for force links, cache the per-library movie filter
+  - Cross-links render as a badge again on rows that show brand logos
+  - Cross-link text picks its colour from the background so it stays readable on any theme
+  - Cross-links are always placed last in the external links row
+  - Clicking a cross-link no longer opens a new tab on the first click
+  - Cross-links no longer depend on jellyfin-web class names, which failed silently
+  - Send Cache-Control on the rewritten index.html so a stale copy cannot disable the script
