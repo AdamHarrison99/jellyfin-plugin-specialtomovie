@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "2.0.0.0",
+        "changelog": "The major version now tracks the Jellyfin major version this plugin builds against: 2.x is the Jellyfin 12 line, and Jellyfin 10.11 servers should stay on 1.0.15.0. The cross-link button on the detail page is now drawn as an icon the same way the metadata logo packs draw theirs, so it sits in the row as one of them on any theme, taking its size, spacing and vertical alignment from the row's own links rather than from a fixed box, and adding no hover animation of its own. It also no longer appears on detail pages the web client holds off-screen, which could leave one side of a pair showing two icons and the other none. Supersedes the withdrawn 1.0.18.0 and 1.0.19.0.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/AdamHarrison99/jellyfin-plugin-specialtomovie/releases/download/v2.0.0/specialtomovie-v2.0.0.zip",
+        "checksum": "df9dbfde3523f8a2a86d31c59544be41",
+        "timestamp": "2026-09-09T19:22:00Z"
+      },
+      {
         "version": "1.0.17.0",
         "changelog": "Jellyfin 12.0.0 general availability — the plugin now builds against the released 12.0.0 packages instead of 12.0.0-rc4. Adds cross-link buttons on the detail page to jump between a linked special and its movie, ignore list entries that can name a whole series, and pair removal that prompts differently depending on whether media files are affected. Scheduled task names are prefixed with the plugin name. Hardening from a full audit: the pair store no longer throws when its file cannot be written or read, provider IDs are escaped before use in TMDB/TVDB request paths, and full scans do less redundant work on large libraries.",
         "targetAbi": "12.0.0.0",

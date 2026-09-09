@@ -1,6 +1,6 @@
 name: "SpecialToMovie"
 guid: "a1b2c3d4-5678-9abc-def0-123456789abc"
-version: "1.0.19.0"
+version: "2.0.0.0"
 targetAbi: "12.0.0.0"
 framework: "net10.0"
 overview: "Detects TV specials that are also movies, creates hard links, and syncs watch status."
@@ -14,8 +14,12 @@ owner: "AdamHarrison99"
 artifacts:
   - "Jellyfin.Plugin.SpecialToMovie.dll"
 changelog: |
-  - Cross-link badge joins the row of brand logos even when a plugin renders those
-    logos into a container of its own, which left one side of a pair as plain text
-  - Cross-link badge takes its size and alignment from a neighbouring logo instead
-    of a fixed 28px box, so it lines up with the rest of the row
-  - Detail pages do markedly less style and layout work on every render
+  - Major version now tracks the Jellyfin major version this plugin builds against;
+    2.x is the Jellyfin 12 line, and Jellyfin 10.11 servers stay on 1.0.15.0
+  - Cross-link button is drawn as an icon in the same way the metadata logo packs
+    draw theirs, so it sits in the row as one of them on any theme
+  - Cross-link icon takes its size, spacing and vertical alignment from the row's
+    own links instead of a fixed box, and has no hover animation of its own
+  - Cross-link icon no longer appears on detail pages held off-screen by the web
+    client, which could leave one side of a pair with two icons and the other none
+  - Supersedes the withdrawn 1.0.18.0 and 1.0.19.0
