@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>AuditHarness</RootNamespace>
+    <AssemblyName>AuditHarness</AssemblyName>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Referenced as a project so the harness always runs against the working tree, not against
+         a stale copy of the plugin assembly. -->
+    <ProjectReference Include="../../../Jellyfin.Plugin.SpecialToMovie.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -200,7 +200,7 @@ public class CleanupTask : IScheduledTask
 
             if (!dryRunMode && autoDelete && !pair.IsExistingMovie)
             {
-                DeleteItemWithFiles(pair.MovieItemId);
+                LinkedItemDeleter.DeleteWithFiles(_libraryManager, _logger, pair.MovieItemId);
             }
 
             return;
@@ -279,29 +279,5 @@ public class CleanupTask : IScheduledTask
 
         moviesByPath.TryGetValue(hardLinkPath, out var movie);
         return movie;
-    }
-
-    private void DeleteItemWithFiles(Guid? itemId)
-    {
-        if (itemId == null || itemId == Guid.Empty)
-        {
-            return;
-        }
-
-        var item = _libraryManager.GetItemById(itemId.Value);
-        if (item == null)
-        {
-            return;
-        }
-
-        try
-        {
-            _libraryManager.DeleteItem(item, new DeleteOptions { DeleteFileLocation = true });
-            _logger.LogInformation("Deleted {Name} with files via Jellyfin", item.Name);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to delete item {Id} via Jellyfin", itemId);
-        }
     }
 }

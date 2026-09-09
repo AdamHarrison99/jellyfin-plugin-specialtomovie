@@ -71,7 +71,14 @@ Jellyfin uses 4-part version numbers (e.g., `1.0.4.0`). **Only perform these ste
    - `checksum`: MD5 hash from step 3
    - `timestamp`: ISO 8601 date **with time** (e.g., `2026-05-22T21:27:24Z`), not just midnight. Use the actual current UTC time when creating the entry.
 
-6. **Commit and push** to `master`.
+6. **Commit and push** to `master`. The release mechanics go in their **own commit**, separate from
+   any code or documentation work in the same release: the `.csproj` `AssemblyVersion`/`FileVersion`
+   bump, `build.yaml`, and `manifest.json` — and nothing else. Code fixes, `AUDIT.md`, `HANDOFF.md`,
+   `README.md` and anything under `tools/` are committed first, on their own.
+
+   Where a single file carries both — the `.csproj` typically holds the version bump *and* a real
+   build change — stage the file twice: check in the non-release edit with the old version number,
+   then bump the version as part of the release commit. Every commit must still build on its own.
 
 7. **Create the GitHub release** with the zip attached:
    ```

@@ -275,9 +275,12 @@ public class PairStore : IPairStore
             return JsonSerializer.Deserialize<List<LinkedPair>>(json, SerializerOptions)
                    ?? new List<LinkedPair>();
         }
-        catch (JsonException ex)
+        catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
         {
-            _logger.LogError(ex, "Failed to parse pair store, attempting backup restore");
+            // Not only malformed JSON: the file can also be locked, truncated or unreadable. This
+            // runs from the constructor, so letting any of those escape fails the DI registration
+            // and takes the whole plugin down rather than degrading to the backup.
+            _logger.LogError(ex, "Failed to read pair store, attempting backup restore");
             return LoadBackup();
         }
     }
@@ -301,27 +304,55 @@ public class PairStore : IPairStore
             File.Copy(_backupFilePath, _dataFilePath, overwrite: true);
             return pairs;
         }
-        catch (JsonException ex)
+        catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
         {
-            _logger.LogError(ex, "Backup file also corrupt, starting with empty pair store");
+            _logger.LogError(ex, "Backup pair store unreadable, starting with empty pair store");
             return new List<LinkedPair>();
         }
     }
 
+    /// <summary>
+    /// Persists the store. Never throws: a write failure is logged and the in-memory state is kept.
+    /// </summary>
+    /// <remarks>
+    /// Every mutation calls this, and the mutation has already been applied to <see cref="_pairs"/>
+    /// by the time it runs. Letting an I/O error escape would therefore be the worst of both
+    /// worlds: the caller sees a failure for a change that did take effect in memory, and the
+    /// exception unwinds into whatever invoked the mutation — including Jellyfin's own
+    /// <c>ItemRemoved</c> dispatch, where it would disrupt unrelated subscribers.
+    /// <para>
+    /// Swallowing it means the store can be newer in memory than on disk until the next successful
+    /// save. That is the lesser evil for a transient failure (a locked file, a full disk, a
+    /// momentarily unavailable network share) because the next mutation rewrites the whole file
+    /// and so repairs the divergence on its own.
+    /// </para>
+    /// </remarks>
     private void Save()
     {
-        // Atomic backup: copy to temp, then rename
-        if (File.Exists(_dataFilePath))
+        try
         {
-            var backupTemp = _backupFilePath + ".tmp";
-            File.Copy(_dataFilePath, backupTemp, overwrite: true);
-            File.Move(backupTemp, _backupFilePath, overwrite: true);
-        }
+            // Atomic backup: copy to temp, then rename
+            if (File.Exists(_dataFilePath))
+            {
+                var backupTemp = _backupFilePath + ".tmp";
+                File.Copy(_dataFilePath, backupTemp, overwrite: true);
+                File.Move(backupTemp, _backupFilePath, overwrite: true);
+            }
 
-        // Write to temp file first, then atomic rename to avoid partial writes on crash
-        var tempPath = _dataFilePath + ".tmp";
-        var json = JsonSerializer.Serialize(_pairs, SerializerOptions);
-        File.WriteAllText(tempPath, json);
-        File.Move(tempPath, _dataFilePath, overwrite: true);
+            // Write to temp file first, then atomic rename to avoid partial writes on crash
+            var tempPath = _dataFilePath + ".tmp";
+            var json = JsonSerializer.Serialize(_pairs, SerializerOptions);
+            File.WriteAllText(tempPath, json);
+            File.Move(tempPath, _dataFilePath, overwrite: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _logger.LogError(
+                ex,
+                "Failed to persist the pair store to {Path}. {Count} pairs are held in memory and " +
+                "will be written again by the next change; they are lost if the server restarts first.",
+                _dataFilePath,
+                _pairs.Count);
+        }
     }
 }

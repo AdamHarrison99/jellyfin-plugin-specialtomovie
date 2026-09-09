@@ -76,7 +76,9 @@ public class TvdbLookupService : IMetadataLookupService, IDisposable
 
     private async Task<MovieMatch?> FindLinkedMovieAsync(string episodeTvdbId, string token, CancellationToken cancellationToken)
     {
-        var url = $"{BaseUrl}/episodes/{episodeTvdbId}/extended";
+        // episodeTvdbId comes from library metadata, not from this plugin, so it is escaped before
+        // becoming a path segment.
+        var url = $"{BaseUrl}/episodes/{Uri.EscapeDataString(episodeTvdbId)}/extended";
         var response = await SendWithRetryAsync(url, token, cancellationToken).ConfigureAwait(false);
         if (response == null)
         {
@@ -195,7 +197,7 @@ public class TvdbLookupService : IMetadataLookupService, IDisposable
     private async Task<string?> GetEpisodeTranslatedTitleAsync(string episodeId, string token, CancellationToken cancellationToken)
     {
         var lang = GetTvdbLanguageCode();
-        var url = $"{BaseUrl}/episodes/{episodeId}/translations/{lang}";
+        var url = $"{BaseUrl}/episodes/{Uri.EscapeDataString(episodeId)}/translations/{lang}";
         var response = await SendWithRetryAsync(url, token, cancellationToken).ConfigureAwait(false);
         if (response != null)
         {
@@ -208,7 +210,7 @@ public class TvdbLookupService : IMetadataLookupService, IDisposable
 
         if (!string.Equals(lang, "eng", StringComparison.Ordinal))
         {
-            var engUrl = $"{BaseUrl}/episodes/{episodeId}/translations/eng";
+            var engUrl = $"{BaseUrl}/episodes/{Uri.EscapeDataString(episodeId)}/translations/eng";
             var engResponse = await SendWithRetryAsync(engUrl, token, cancellationToken).ConfigureAwait(false);
             if (engResponse != null)
             {

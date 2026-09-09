@@ -41,7 +41,8 @@ published with the code, and reviewable.
 
 | Tool | What it does | How to run it |
 | --- | --- | --- |
-| _(none yet)_ | | |
+| [`abi-probe/`](abi-probe/) | Diffs the public + protected API surface of two Jellyfin package versions, so a server upgrade can be checked against what the plugin actually binds to instead of assumed safe. Materialises each version's dependency closure in a temporary directory and deletes it afterwards. | `pwsh agentic/tools/abi-probe/Compare-JellyfinAbi.ps1 -From 12.0.0-rc4 -To 12.0.0` — exit 0 = identical, 1 = differences listed, 2 = probe failed. Add `-KeepWork` to keep the surface dumps. |
+| [`audit-harness/`](audit-harness/) | Behavioural checks for the parts of the plugin that run without a Jellyfin server: `BuildHardLinkPath` containment and filename sanitisation, `PairStore` persistence/corruption recovery/write-failure tolerance, and the URL escaping applied to provider IDs. References the plugin as a project, so it always tests the working tree. | `dotnet run -c Release --project agentic/tools/audit-harness` — prints PASS/FAIL per check; exit 0 = all passed, 1 = at least one failed. |
 
 The pre-release audit sweeps the scratchpad for tooling that should have been promoted here — see
 `CLAUDE.md` → Pre-Release Audit → Scratchpad & Temporary File Sweep.

@@ -39,15 +39,19 @@ public class SpecialDetectionService
 
     public async Task ProcessEpisodeAsync(Episode episode, CancellationToken cancellationToken = default)
     {
-        var movies = _libraryManager.GetItemList(new InternalItemsQuery
-        {
-            IncludeItemTypes = [BaseItemKind.Movie],
-            Recursive = true
-        });
-        await ProcessEpisodeAsync(episode, null, movies, null, cancellationToken).ConfigureAwait(false);
+        var virtualFolders = _libraryManager.GetVirtualFolders();
+        var movieIndex = new MovieIndex(
+            _libraryManager.GetItemList(new InternalItemsQuery
+            {
+                IncludeItemTypes = [BaseItemKind.Movie],
+                Recursive = true
+            }),
+            virtualFolders);
+
+        await ProcessEpisodeAsync(episode, null, movieIndex, virtualFolders, cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task ProcessEpisodeAsync(Episode episode, ConfigSnapshot? snapshot, IReadOnlyList<BaseItem>? allMovies, IReadOnlyList<VirtualFolderInfo>? virtualFolders, CancellationToken cancellationToken)
+    private async Task ProcessEpisodeAsync(Episode episode, ConfigSnapshot? snapshot, MovieIndex? movieIndex, IReadOnlyList<VirtualFolderInfo>? virtualFolders, CancellationToken cancellationToken)
     {
         var config = Plugin.Instance?.Configuration;
         if (config == null)
@@ -129,8 +133,8 @@ public class SpecialDetectionService
                                      !string.IsNullOrEmpty(match.TvdbMovieId) ||
                                      !string.IsNullOrEmpty(match.ImdbId);
                 existingForced = hasProviderIds
-                    ? FindExistingMovie(mapping.DestinationLibraryId, match, allMovies, virtualFolders)
-                    : FindExistingMovieByTitle(mapping.DestinationLibraryId, match, allMovies, virtualFolders);
+                    ? FindExistingMovie(mapping.DestinationLibraryId, match, movieIndex)
+                    : FindExistingMovieByTitle(mapping.DestinationLibraryId, match, movieIndex);
             }
             if (existingForced != null)
             {
@@ -174,7 +178,7 @@ public class SpecialDetectionService
         }
 
         // Check if the movie already exists in the destination library
-        var existingMovie = FindExistingMovie(mapping.DestinationLibraryId, match, allMovies, virtualFolders);
+        var existingMovie = FindExistingMovie(mapping.DestinationLibraryId, match, movieIndex);
         if (existingMovie != null)
         {
             _logger.LogInformation(
@@ -319,11 +323,13 @@ public class SpecialDetectionService
 
         // Cache virtual folders and batch-fetch all movies once
         var virtualFolders = _libraryManager.GetVirtualFolders();
-        var allMovies = _libraryManager.GetItemList(new InternalItemsQuery
-        {
-            IncludeItemTypes = [BaseItemKind.Movie],
-            Recursive = true
-        });
+        var movieIndex = new MovieIndex(
+            _libraryManager.GetItemList(new InternalItemsQuery
+            {
+                IncludeItemTypes = [BaseItemKind.Movie],
+                Recursive = true
+            }),
+            virtualFolders);
 
         var total = episodes.Count;
         _logger.LogInformation("Full scan: found {Count} Season 0 episodes", total);
@@ -334,7 +340,7 @@ public class SpecialDetectionService
 
             if (episodes[i] is Episode episode)
             {
-                await ProcessEpisodeAsync(episode, snapshot, allMovies, virtualFolders, cancellationToken).ConfigureAwait(false);
+                await ProcessEpisodeAsync(episode, snapshot, movieIndex, virtualFolders, cancellationToken).ConfigureAwait(false);
 
                 // Small delay between lookups to respect rate limits
                 await Task.Delay(100, cancellationToken).ConfigureAwait(false);
@@ -345,12 +351,12 @@ public class SpecialDetectionService
 
         EnforceIgnoreList(snapshot, config.AutoDeleteOnRemoval);
 
-        await ProcessForceLinksAsync(snapshot, allMovies, virtualFolders, cancellationToken).ConfigureAwait(false);
+        await ProcessForceLinksAsync(snapshot, movieIndex, virtualFolders, cancellationToken).ConfigureAwait(false);
 
         // Promote DryRun pairs if dry run was just disabled
         if (!config.DryRunMode)
         {
-            await PromoteDryRunPairsAsync(snapshot, allMovies, virtualFolders, cancellationToken).ConfigureAwait(false);
+            await PromoteDryRunPairsAsync(snapshot, movieIndex, virtualFolders, cancellationToken).ConfigureAwait(false);
         }
 
         // Sync watch state for all Active pairs (catches pairs that existed before watch sync was added,
@@ -363,7 +369,7 @@ public class SpecialDetectionService
         _logger.LogInformation("Full scan complete");
     }
 
-    private async Task PromoteDryRunPairsAsync(ConfigSnapshot snapshot, IReadOnlyList<BaseItem> allMovies, IReadOnlyList<VirtualFolderInfo> virtualFolders, CancellationToken cancellationToken)
+    private async Task PromoteDryRunPairsAsync(ConfigSnapshot snapshot, MovieIndex movieIndex, IReadOnlyList<VirtualFolderInfo> virtualFolders, CancellationToken cancellationToken)
     {
         var dryRunPairs = _pairStore.GetAll().Where(p => p.Status == PairStatus.DryRun).ToList();
         if (dryRunPairs.Count == 0)
@@ -387,7 +393,7 @@ public class SpecialDetectionService
 
             // Remove the DryRun pair so ProcessEpisodeAsync can recreate it as Pending
             _pairStore.Remove(pair.Id);
-            await ProcessEpisodeAsync(episode, snapshot, allMovies, virtualFolders, cancellationToken).ConfigureAwait(false);
+            await ProcessEpisodeAsync(episode, snapshot, movieIndex, virtualFolders, cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -440,21 +446,13 @@ public class SpecialDetectionService
         return null;
     }
 
-    private BaseItem? FindExistingMovie(Guid destinationLibraryId, MovieMatch match, IReadOnlyList<BaseItem>? cachedMovies, IReadOnlyList<VirtualFolderInfo>? virtualFolders)
+    private BaseItem? FindExistingMovie(Guid destinationLibraryId, MovieMatch match, MovieIndex? movieIndex)
     {
         IEnumerable<BaseItem> movies;
 
-        if (cachedMovies != null && virtualFolders != null)
+        if (movieIndex != null)
         {
-            var destFolder = virtualFolders.FirstOrDefault(f =>
-                Guid.TryParse(f.ItemId, out var id) && id == destinationLibraryId);
-            var destLocations = destFolder?.Locations ?? [];
-
-            movies = cachedMovies.Where(m =>
-                !string.IsNullOrEmpty(m.Path) &&
-                destLocations.Any(loc =>
-                    !string.IsNullOrEmpty(loc) &&
-                    m.Path.StartsWith(loc, StringComparison.OrdinalIgnoreCase)));
+            movies = movieIndex.ForDestination(destinationLibraryId);
         }
         else
         {
@@ -475,33 +473,14 @@ public class SpecialDetectionService
              m.GetProviderId(MetadataProvider.Imdb) == match.ImdbId));
     }
 
-    private static BaseItem? FindExistingMovieByTitle(Guid destinationLibraryId, MovieMatch match, IReadOnlyList<BaseItem>? cachedMovies, IReadOnlyList<VirtualFolderInfo>? virtualFolders)
+    private static BaseItem? FindExistingMovieByTitle(Guid destinationLibraryId, MovieMatch match, MovieIndex? movieIndex)
     {
-        if (string.IsNullOrEmpty(match.Title))
+        if (string.IsNullOrEmpty(match.Title) || movieIndex == null)
         {
             return null;
         }
 
-        IEnumerable<BaseItem> movies;
-
-        if (cachedMovies != null && virtualFolders != null)
-        {
-            var destFolder = virtualFolders.FirstOrDefault(f =>
-                Guid.TryParse(f.ItemId, out var id) && id == destinationLibraryId);
-            var destLocations = destFolder?.Locations ?? [];
-
-            movies = cachedMovies.Where(m =>
-                !string.IsNullOrEmpty(m.Path) &&
-                destLocations.Any(loc =>
-                    !string.IsNullOrEmpty(loc) &&
-                    m.Path.StartsWith(loc, StringComparison.OrdinalIgnoreCase)));
-        }
-        else
-        {
-            return null;
-        }
-
-        return movies.FirstOrDefault(m =>
+        return movieIndex.ForDestination(destinationLibraryId).FirstOrDefault(m =>
             string.Equals(m.Name, match.Title, StringComparison.OrdinalIgnoreCase) &&
             (!match.Year.HasValue || m.ProductionYear == match.Year));
     }
@@ -729,7 +708,7 @@ public class SpecialDetectionService
 
         foreach (var movieItemId in toDelete)
         {
-            DeleteLinkedMovieItem(movieItemId);
+            LinkedItemDeleter.DeleteWithFiles(_libraryManager, _logger, movieItemId);
         }
     }
 
@@ -742,17 +721,19 @@ public class SpecialDetectionService
         }
 
         var snapshot = ConfigSnapshot.From(config);
-        var allMovies = _libraryManager.GetItemList(new InternalItemsQuery
-        {
-            IncludeItemTypes = [BaseItemKind.Movie],
-            Recursive = true
-        });
         var virtualFolders = _libraryManager.GetVirtualFolders();
+        var movieIndex = new MovieIndex(
+            _libraryManager.GetItemList(new InternalItemsQuery
+            {
+                IncludeItemTypes = [BaseItemKind.Movie],
+                Recursive = true
+            }),
+            virtualFolders);
 
-        await ProcessForceLinksAsync(snapshot, allMovies, virtualFolders, cancellationToken).ConfigureAwait(false);
+        await ProcessForceLinksAsync(snapshot, movieIndex, virtualFolders, cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task ProcessForceLinksAsync(ConfigSnapshot snapshot, IReadOnlyList<BaseItem> allMovies, IReadOnlyList<VirtualFolderInfo> virtualFolders, CancellationToken cancellationToken)
+    private async Task ProcessForceLinksAsync(ConfigSnapshot snapshot, MovieIndex movieIndex, IReadOnlyList<VirtualFolderInfo> virtualFolders, CancellationToken cancellationToken)
     {
         if (snapshot.ForceLinks.Count == 0)
         {
@@ -766,6 +747,20 @@ public class SpecialDetectionService
             Recursive = true
         });
 
+        // Index the episodes once by both forms a force link may name them by. Matching by scanning
+        // the list per force link meant re-formatting every episode's key for every entry, so the
+        // work grew with force links multiplied by Season 0 episodes.
+        var episodesById = new Dictionary<Guid, Episode>();
+        var episodesByKey = new Dictionary<string, Episode>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var candidate in allEpisodes.OfType<Episode>())
+        {
+            episodesById.TryAdd(candidate.Id, candidate);
+
+            // First match wins, mirroring the FirstOrDefault this replaced.
+            episodesByKey.TryAdd(FormatEpisodeKey(candidate), candidate);
+        }
+
         var processed = 0;
 
         foreach (var forceLink in snapshot.ForceLinks)
@@ -775,12 +770,13 @@ public class SpecialDetectionService
             Episode? episode = null;
             if (Guid.TryParse(forceLink.EpisodeKey, out var forcedEpId))
             {
-                episode = allEpisodes.OfType<Episode>().FirstOrDefault(e => e.Id == forcedEpId);
+                episodesById.TryGetValue(forcedEpId, out episode);
             }
 
-            episode ??= allEpisodes
-                .OfType<Episode>()
-                .FirstOrDefault(e => string.Equals(FormatEpisodeKey(e), forceLink.EpisodeKey, StringComparison.OrdinalIgnoreCase));
+            if (episode == null && forceLink.EpisodeKey != null)
+            {
+                episodesByKey.TryGetValue(forceLink.EpisodeKey, out episode);
+            }
 
             if (episode == null)
             {
@@ -793,7 +789,7 @@ public class SpecialDetectionService
                 continue;
             }
 
-            await ProcessEpisodeAsync(episode, snapshot, allMovies, virtualFolders, cancellationToken).ConfigureAwait(false);
+            await ProcessEpisodeAsync(episode, snapshot, movieIndex, virtualFolders, cancellationToken).ConfigureAwait(false);
             processed++;
         }
 
@@ -803,27 +799,52 @@ public class SpecialDetectionService
         }
     }
 
-    private void DeleteLinkedMovieItem(Guid? itemId)
+
+    /// <summary>
+    /// The server's movies, indexed by destination library.
+    /// </summary>
+    /// <remarks>
+    /// Narrowing every movie on the server down to one destination library means a path prefix test
+    /// per movie per library location. That answer is the same for every episode mapped to that
+    /// library, so computing it inside the per-episode lookup made a full scan's cost grow as
+    /// episodes multiplied by movies. Each destination is filtered once here and reused.
+    /// <para>
+    /// An instance is built per scan and used only by that scan, so it needs no synchronisation of
+    /// its own.
+    /// </para>
+    /// </remarks>
+    private sealed class MovieIndex
     {
-        if (itemId == null || itemId == Guid.Empty)
+        private readonly IReadOnlyList<BaseItem> _allMovies;
+        private readonly IReadOnlyList<VirtualFolderInfo> _virtualFolders;
+        private readonly Dictionary<Guid, List<BaseItem>> _byDestination = new();
+
+        public MovieIndex(IReadOnlyList<BaseItem> allMovies, IReadOnlyList<VirtualFolderInfo> virtualFolders)
         {
-            return;
+            _allMovies = allMovies;
+            _virtualFolders = virtualFolders;
         }
 
-        var item = _libraryManager.GetItemById(itemId.Value);
-        if (item == null)
+        public List<BaseItem> ForDestination(Guid destinationLibraryId)
         {
-            return;
-        }
+            if (_byDestination.TryGetValue(destinationLibraryId, out var cached))
+            {
+                return cached;
+            }
 
-        try
-        {
-            _libraryManager.DeleteItem(item, new DeleteOptions { DeleteFileLocation = true });
-            _logger.LogInformation("Deleted linked movie {Name} via Jellyfin", item.Name);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to delete linked movie item {Id}", itemId);
+            var destFolder = _virtualFolders.FirstOrDefault(f =>
+                Guid.TryParse(f.ItemId, out var id) && id == destinationLibraryId);
+            var destLocations = destFolder?.Locations ?? [];
+
+            var filtered = _allMovies.Where(m =>
+                !string.IsNullOrEmpty(m.Path) &&
+                destLocations.Any(loc =>
+                    !string.IsNullOrEmpty(loc) &&
+                    m.Path.StartsWith(loc, StringComparison.OrdinalIgnoreCase)))
+                .ToList();
+
+            _byDestination[destinationLibraryId] = filtered;
+            return filtered;
         }
     }
 

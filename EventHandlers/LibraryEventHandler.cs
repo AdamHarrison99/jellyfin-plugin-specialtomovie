@@ -140,7 +140,7 @@ public class LibraryEventHandler : IHostedService, IDisposable
 
             if (config.AutoDeleteOnRemoval && !pair.IsExistingMovie)
             {
-                DeleteItemWithFiles(pair.MovieItemId);
+                LinkedItemDeleter.DeleteWithFiles(_libraryManager, _logger, pair.MovieItemId);
             }
             else if (!string.IsNullOrEmpty(pair.HardLinkPath))
             {
@@ -170,53 +170,10 @@ public class LibraryEventHandler : IHostedService, IDisposable
 
             if (config.AutoDeleteOnRemoval && config.TwoWayDeletion)
             {
-                DeleteItemWithFiles(pair.EpisodeItemId);
+                LinkedItemDeleter.DeleteWithFiles(_libraryManager, _logger, pair.EpisodeItemId);
             }
 
             _logger.LogInformation("Removed pair for deleted movie: {Title}", pair.MovieTitle);
-        }
-    }
-
-    private void DeleteItemWithFiles(Guid? itemId)
-    {
-        if (itemId == null || itemId == Guid.Empty)
-        {
-            return;
-        }
-
-        var item = _libraryManager.GetItemById(itemId.Value);
-        if (item == null)
-        {
-            return;
-        }
-
-        try
-        {
-            _libraryManager.DeleteItem(item, new DeleteOptions { DeleteFileLocation = true });
-            _logger.LogInformation("Deleted {Name} with files via Jellyfin", item.Name);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to delete item {Id} via Jellyfin", itemId);
-        }
-    }
-
-    private void DeleteItemWithFiles(Guid itemId)
-    {
-        var item = _libraryManager.GetItemById(itemId);
-        if (item == null)
-        {
-            return;
-        }
-
-        try
-        {
-            _libraryManager.DeleteItem(item, new DeleteOptions { DeleteFileLocation = true });
-            _logger.LogInformation("Deleted {Name} with files via Jellyfin", item.Name);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to delete item {Id} via Jellyfin", itemId);
         }
     }
 }

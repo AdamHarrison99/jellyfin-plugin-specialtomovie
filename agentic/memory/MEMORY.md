@@ -9,6 +9,7 @@ exists, and how to apply it.
 - [agentic/ docs are public](feedback_agentic_docs_in_repo.md) — keep agentic/ free of PII and of references to anything outside the repo
 - [Version bumping convention](feedback_version_bumping.md) — minor is 1.0.x.0, major is 1.x.0.0, first digit only for a full rewrite
 - [Commit message style](feedback_commit_message_style.md) — subject line plus bullets, one per change; no prose paragraphs
+- [Release commit isolation](feedback_release_commit_isolation.md) — version bump, build.yaml and manifest.json commit alone, never mixed with code
 - [Release zip naming](feedback_release_zip_naming.md) — zip and tag use the short version (v1.0.10); manifest sourceUrl must match exactly
 - [Build before handing off](feedback_build_before_push.md) — run dotnet build -c Release and verify success
 - [Always update AUDIT.md](feedback_always_update_audit.md) — write audit results immediately, without asking first

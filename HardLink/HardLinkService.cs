@@ -114,10 +114,19 @@ public partial class HardLinkService : IHardLinkService
 
         var candidate = Path.Combine(destinationLibraryPath, folderName, fileName);
 
-        // Verify the resolved path is still under the destination library root
+        // Verify the resolved path is still under the destination library root. The root is given a
+        // trailing separator first: a bare prefix test also accepts a sibling directory whose name
+        // merely starts with the root's ("/media/movies-old" against a root of "/media/movies").
+        // Nothing reaching here is attacker-controlled today — the components are sanitized titles
+        // and the root comes from Jellyfin's library config — but this is the backstop that is
+        // supposed to hold if that ever stops being true.
         var resolvedPath = Path.GetFullPath(candidate);
         var resolvedRoot = Path.GetFullPath(destinationLibraryPath);
-        if (!resolvedPath.StartsWith(resolvedRoot, StringComparison.OrdinalIgnoreCase))
+        var rootWithSeparator = resolvedRoot.EndsWith(Path.DirectorySeparatorChar)
+            ? resolvedRoot
+            : resolvedRoot + Path.DirectorySeparatorChar;
+
+        if (!resolvedPath.StartsWith(rootWithSeparator, StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException(
                 $"Constructed path '{resolvedPath}' escapes destination root '{resolvedRoot}'");

@@ -17,7 +17,7 @@ Manual hard links solve the file deduplication problem, but **watch status still
 - **Subtitle sync** — hard links external subtitle files between paired items, syncs additions and removals bidirectionally
 - **Existing movie detection** — if a linked movie already exists in your library, pairs it directly without creating a hard link
 - **Library mapping** — route specials from specific TV libraries to specific movie libraries
-- **Force links & ignore list** — manually override or exclude episodes using names, Jellyfin item IDs, or provider IDs
+- **Force links & ignore list** — manually override or exclude episodes or entire series using names, Jellyfin item IDs, or provider IDs
 - **Automatic maintenance** — validates pairs periodically, enforces ignore list and force links, fixes orphaned entries
 - **Dry run mode** (on by default) — review what the plugin would do before enabling real linking
 - **NFO metadata** — writes Kodi-compatible NFO files so Jellyfin identifies linked movies correctly

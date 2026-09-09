@@ -148,7 +148,11 @@ public class TmdbLookupService : IMetadataLookupService, IDisposable
             return null;
         }
 
-        var url = $"{BaseUrl}/tv/{seriesTmdbId}/season/{seasonNumber}/episode/{episodeNumber}/external_ids?api_key={apiKey}";
+        // seriesTmdbId comes from library metadata (an NFO or a metadata provider), so it is not
+        // guaranteed to be a bare number. Escaped because it lands in the path of a URL that also
+        // carries the API key: an unescaped '/', '?' or '#' would re-point the request at a
+        // different endpoint on the API host.
+        var url = $"{BaseUrl}/tv/{Uri.EscapeDataString(seriesTmdbId)}/season/{seasonNumber}/episode/{episodeNumber}/external_ids?api_key={apiKey}";
         var response = await SendWithRetryAsync(url, cancellationToken).ConfigureAwait(false);
         if (response == null)
         {
@@ -168,7 +172,9 @@ public class TmdbLookupService : IMetadataLookupService, IDisposable
     private async Task<MovieMatch?> FindMovieByImdbIdAsync(string imdbId, string apiKey, CancellationToken cancellationToken)
     {
         var lang = _configManager.Configuration.PreferredMetadataLanguage ?? "en";
-        var url = $"{BaseUrl}/find/{imdbId}?api_key={apiKey}&external_source=imdb_id&language={lang}";
+        // imdbId originates in library metadata rather than in this plugin; see the note in
+        // GetImdbIdFromTmdbAsync for why a path segment from that source is escaped.
+        var url = $"{BaseUrl}/find/{Uri.EscapeDataString(imdbId)}?api_key={apiKey}&external_source=imdb_id&language={lang}";
         var response = await SendWithRetryAsync(url, cancellationToken).ConfigureAwait(false);
         if (response == null)
         {

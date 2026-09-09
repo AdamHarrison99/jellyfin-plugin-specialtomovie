@@ -37,6 +37,175 @@ technical, none personal. The only matches returned were the known-acceptable on
 ---
 ---
 
+## Audit: 2026-09-09 (Session 17 — Pre-release v1.0.17.0, Jellyfin 12.0.0 GA re-pin + full codebase audit)
+
+**Scope**: Two parts. (a) The Jellyfin 12 GA re-pin and the release mechanics around it — `Jellyfin.Controller`/`Jellyfin.Model` `12.0.0-rc4` -> `12.0.0`; `AssemblyVersion`/`FileVersion` -> `1.0.17.0`; `build.yaml` and `manifest.json` resynced; `agentic/**` excluded from the plugin's compile globs; `agentic/tools/abi-probe/` added. (b) A full security and efficiency audit of every `.cs` file, with fixes applied and verified.
+**Triggered by**: User-requested release now that Jellyfin 12 has shipped, with a check that nothing remains outstanding for Jellyfin 12; followed by an explicit request to audit, fix and verify.
+
+**Scope note**: this began as a GA re-pin with no application-code change, then a full security and
+efficiency review of the whole codebase was requested and run. Seven issues were found and fixed
+across `Data/PairStore.cs`, both lookup services, `Services/SpecialDetectionService.cs`,
+`HardLink/HardLinkService.cs` and the four copies of the deletion helper.
+`Configuration/configPage.html` and `Web/specialtomovie.js` are unchanged from what Sessions 15 and
+16 reviewed and were re-checked rather than re-audited from scratch.
+
+A behavioural harness was written to verify the fixes and promoted to
+[`agentic/tools/audit-harness`](tools/audit-harness/): **21 checks, all passing**.
+
+---
+
+### The rc4 -> GA assumption, discharged
+
+The v1.0.16.0 audit shipped against `12.0.0-rc4` and recorded an **accepted risk**: that 12.0.0 GA
+would carry no API change from rc4, with no re-verification planned. That assumption is now
+**verified rather than carried forward**, and it needed verifying — GA is not identical to rc4.
+
+Method: [`agentic/tools/abi-probe`](tools/abi-probe/) dumps the public and protected API surface of
+each version's Jellyfin assemblies (16,096 members for rc4, 16,138 for GA) and diffs them.
+
+**Result: 21 members removed, 63 added.** Every removal is in an area this plugin does not touch:
+
+| Removed | Nature |
+| --- | --- |
+| `ISessionManager.AddAdditionalUser` / `RemoveAdditionalUser` / `ReportCapabilities` / `ReportNowViewingItem` | Signature change — each gained a leading `controllingSessionId` parameter |
+| `JellyfinQueryHelperExtensions.WhereOneOrMany` / `OneOrManyExpressionBuilder` / `WhereReferencedItem*` | Signature change — `IList<T>` -> `IReadOnlyList<T>` |
+| `Permission.UserId`, `Preference.UserId` | Signature change — `Guid?` -> `Guid` |
+| `ActivityLogQuery.Severity` | Not a real change — a rebind of `Microsoft.Extensions.Logging.Abstractions` from 9.0.0.0 to 10.0.0.0 |
+| `ILibraryManager.ValidatePeopleAsync`, `ILibraryManager`/`IItemCountService.GetChildCountBatch` | Genuine removal / return-type change |
+
+The plugin references **none** of them, confirmed by grep over all `.cs` files as well as by the
+build. Conversely, every Jellyfin type the plugin does bind to is **byte-identical** between rc4 and
+GA — `IExternalUrlProvider`, `GetSmartApiUrl`, `IPluginServiceRegistrator`, `ISubtitleManager`,
+`IUserDataManager`, `ITaskManager`, `IMediaSourceManager`, and `Policies.RequiresElevation` were each
+diffed individually and are unchanged.
+
+Build against `12.0.0`: **0 warnings, 0 errors** on SDK 10.0.302.
+
+**Runtime-bound surface** (the part a clean compile cannot vouch for) was checked separately: the
+plugin uses no reflection against Jellyfin types — the only `System.Reflection` use is
+`ClientScriptController` reading an embedded resource out of the plugin's *own* assembly, and
+`Plugin.cs` reading its own namespace — so there is no member resolved by name at run time that the
+compiler would not have caught.
+
+**Conclusion: the Jellyfin 12 migration is complete.** `targetAbi 12.0.0.0` matches the GA
+assemblies' own `assemblyVersion`/`fileVersion`, the README requirements already state Jellyfin
+12.0.0 / .NET 10, and no rc-era reference remains anywhere but in historical documents.
+
+---
+
+### Confirmed Issues
+
+#### 1. `PairStore.Save()` could throw into Jellyfin's event dispatch (MEDIUM — robustness/data integrity)
+- **File**: `Data/PairStore.cs`
+- **Issue**: `Save()` performed `File.Copy`, `File.WriteAllText` and `File.Move` with no error handling, and every mutation (`Upsert`, `UpsertMany`, `Remove`, `RemoveMany`, `Clear`) calls it while holding the store lock. A locked file, a full disk or a briefly unavailable network share therefore threw *out of the mutation*. Two consequences: the in-memory list had already been mutated, so the caller saw a failure for a change that had taken effect; and the call sites include `LibraryEventHandler.OnItemRemoved`, which is **not** wrapped in a try/catch, so the exception would unwind into Jellyfin's own `ItemRemoved` dispatch and could disrupt unrelated subscribers.
+- **Status**: **Fixed** — `Save()` now catches `IOException`/`UnauthorizedAccessException`, logs an error naming the path and the number of pairs held in memory, and returns. The store stays newer in memory than on disk until the next successful save, which repairs itself because every save rewrites the whole file. Verified by harness checks *"a failing save does not throw out of Upsert"* and *"...out of Remove or Clear"*.
+
+#### 2. An unreadable pair store took the whole plugin down (MEDIUM — availability)
+- **File**: `Data/PairStore.cs`
+- **Issue**: `Load()` and `LoadBackup()` caught only `JsonException`. A file that exists but cannot be *read* — locked by another process, a permissions problem, an I/O error — threw `IOException`/`UnauthorizedAccessException` from the `PairStore` constructor. Because `IPairStore` is a DI singleton every other plugin service depends on, that fails the registration and the entire plugin dies with an error that points at DI rather than at the real cause.
+- **Status**: **Fixed** — both now catch `JsonException`, `IOException` and `UnauthorizedAccessException`, degrading primary → backup → empty. Verified by harness checks *"a corrupt primary file is recovered from the backup"*, *"a corrupt primary and a corrupt backup degrade to an empty store"*, and *"an unreadable primary file does not throw out of the constructor"*.
+
+#### 3. Provider IDs interpolated unescaped into API URL paths (LOW — input validation)
+- **Files**: `Lookup/TmdbLookupService.cs`, `Lookup/TvdbLookupService.cs`
+- **Issue**: `imdbId`, `seriesTmdbId` (TMDB) and `episodeTvdbId`, `episodeId` (TVDB) were interpolated straight into request paths. Unlike the force-link values — which `ParseForcedMovie` validates as `tt`+digits or all-digits — these come from **library metadata**: an NFO file beside the media, or whatever a metadata provider wrote. That is not plugin-controlled input. A value containing `/`, `..`, `?` or `#` re-points the request at a different endpoint on the API host or reshapes its query string, and the TMDB URLs carry `api_key=`.
+- **Not** a host-level SSRF: the scheme and host are constants, so this is confined to the metadata API being called.
+- **Status**: **Fixed** — every string-typed ID is wrapped in `Uri.EscapeDataString`, with a comment at the first site explaining the provenance. TVDB's `movieId` is a `long` and TMDB's `movieId`/`seasonNumber`/`episodeNumber` are numeric, so those were left alone. Verified by five harness checks covering well-formed IDs (unchanged), traversal, query injection and fragment truncation.
+- **Note**: this does not contradict the standing false positive *"Language parameter injection in TMDB URLs"*, which concerns `lang` — an admin-set server setting — not provider IDs.
+
+#### 4. Force-link matching scaled as force links × episodes (MEDIUM — efficiency)
+- **File**: `Services/SpecialDetectionService.cs`, `ProcessForceLinksAsync`
+- **Issue**: For each force link the method scanned the whole Season 0 episode list with `FirstOrDefault`, calling `FormatEpisodeKey(e)` — a string interpolation — on every candidate. 50 force links against 1,000 Season 0 episodes meant up to 50,000 key formats per run, on a task that runs every 6 hours by default.
+- **Status**: **Fixed** — the episodes are indexed once into a `Guid`→episode map and a case-insensitive key→episode map, then each force link is two dictionary probes. `TryAdd` preserves the original "first match wins" semantics of `FirstOrDefault`.
+
+#### 5. Destination-library movie filtering repeated per episode (MEDIUM — efficiency)
+- **File**: `Services/SpecialDetectionService.cs`, `FindExistingMovie` / `FindExistingMovieByTitle`
+- **Issue**: A full scan fetches every movie on the server once, correctly — but narrowing that list to the destination library happened *inside* the per-episode lookup: a `virtualFolders.FirstOrDefault` plus a `Where` over all movies with a nested `Any` of case-insensitive `StartsWith` per library location. The answer is identical for every episode mapped to the same library, so the work grew as episodes × movies × locations. 500 episodes against 5,000 movies is on the order of millions of redundant path comparisons per scan.
+- **Status**: **Fixed** — a new private `MovieIndex` holds the movie list and the virtual folders and memoises the filtered list per destination library. It is built once per scan and passed through in place of the raw list, so it is thread-confined to the scan and needs no locking. The uncached fallback (`GetItemList` scoped by `ParentId`) is unchanged for the null-index path.
+
+#### 6. Path containment guard used a bare prefix match (LOW — defence in depth)
+- **File**: `HardLink/HardLinkService.cs`, `BuildHardLinkPath`
+- **Issue**: The guard tested `resolvedPath.StartsWith(resolvedRoot)` without a trailing separator, so a sibling directory whose name merely begins with the root's — `/media/movies-old` against a root of `/media/movies` — satisfied it. Not reachable today: the path components are `SanitizeFileName` output and the root comes from Jellyfin's library configuration, so the constructed path is always a genuine child. But this is the backstop that is supposed to hold when that stops being true.
+- **Status**: **Fixed** — the root gets a trailing `Path.DirectorySeparatorChar` before the comparison. Verified by harness checks *"a sibling directory sharing the root's prefix is not treated as inside it"* (asserting the old predicate accepted it and the new one does not) and *"a genuine child is still accepted"*.
+
+#### 7. `DeleteItemWithFiles` existed in four near-identical copies (LOW — reuse)
+- **Files**: `Api/SpecialToMovieController.cs`, `Services/SpecialDetectionService.cs` (as `DeleteLinkedMovieItem`), `EventHandlers/LibraryEventHandler.cs` (two overloads), `Tasks/CleanupTask.cs`
+- **Issue**: The same null guard, `GetItemById` miss guard, `DeleteItem(… DeleteFileLocation = true)` call and try/catch, written out five times across four files. One of the `LibraryEventHandler` overloads took a non-nullable `Guid` and omitted the `Guid.Empty` check — harmless, since `GetItemById(Guid.Empty)` returns null, but exactly the kind of drift that duplication invites.
+- **Status**: **Fixed** — replaced by `Services/LinkedItemDeleter.DeleteWithFiles(ILibraryManager, ILogger, Guid?)`, a single internal static definition that logs through the caller's own logger so log lines keep their originating category.
+
+---
+
+### Observations (no action taken)
+
+- **`ValidateSameFilesystem` is likely wrong on macOS.** `StatBuf` declares `st_dev` as a `ulong` and relies on it being the first field of `struct stat`. That holds on Linux/glibc, but on macOS `dev_t` is a 32-bit `int32_t` followed by `mode_t` (16-bit) and `nlink_t` (16-bit) — so the 8 bytes read as `st_dev` there actually splice in the file's mode and link count. Two files on the same filesystem with different permissions or link counts would then compare unequal, `ValidateSameFilesystem` returns false, and the episode is stored as an Error pair with "Source and destination are on different filesystems" — silently disabling the plugin's core function. **Not fixed**: the correct change is a platform-specific struct layout, and there is no macOS host here to verify against, so shipping an unverified P/Invoke layout change would be the riskier move. Flagged for a decision.
+- **`ApiResponseCache` has no size bound.** Entries expire only by age (`MetadataCacheDays`), so the in-memory dictionary and its on-disk JSON grow with the number of distinct lookups. Not a leak — a very large library with a long cache window is simply the intended cost — but there is no cap if one is ever wanted.
+- **`WatchSyncService` reentrancy guard keys on the paired item, not the saved one.** The echo of a sync therefore does not hit the key the guard holds, and one extra round-trip write occurs before the second echo is suppressed. It terminates and converges (the values written are the ones just copied), so this is a redundant write rather than a loop, and it is left alone.
+- **`SanitizeFileName` can return an empty string** for a title composed entirely of stripped characters, producing a folder like `" (2019) [JellyfinPlugin-SpecialToMovie]"`. Cosmetic, and not reachable from any real TMDB/TVDB title.
+- **README vs. code.** The README documents the cross-link buttons and the ignore list generally, but does not spell out that an ignore entry can now name a **whole series**. Flagged only — the README is not edited without being asked.
+- **`plans/cross-link-buttons(DONE).md`** still refers to `12.0.0-rc4`. Left as-is: a completed historical plan, accurate when written.
+
+---
+
+### Re-confirmed, not re-flagged
+
+Checked against the standing false-positive list and found unchanged: the TMDB `lang` query parameter (admin-set server setting), the TVDB bearer token (sent as a header, never in the logged URL), `Marshal.GetLastWin32Error()` under `SetLastError = true` on POSIX, the `ConfigSnapshot` copy that defuses the config-mutation race, API keys shown in the admin-only config page, CSRF (Jellyfin's token auth plus `RequiresElevation` on every mutating endpoint), and case sensitivity in the containment check.
+
+Newly reviewed and clean:
+
+- **`Api/ClientScriptController.cs`** — the plugin's only `[AllowAnonymous]` route. Returns a fixed embedded asset, reflects nothing from the request, and the ETag is the assembly version. Correct.
+- **`Web/specialtomovie.js`** — no `innerHTML`, no `eval`, no `Function`. The only `href` written is `parseLink`'s return value, which is always `'#' + hash`, so a `javascript:` URL cannot be constructed.
+- **`Providers/CrossLinkUrlBuilder` / `CrossLinkUrlResolver`** — only a GUID, the system ID and a fixed marker char reach the route; `GetSmartApiUrl` output is validated as an absolute http/https URI before being emitted.
+- **`Services/ScriptInjectionStartupFilter.cs`** — fails open on every path, and the base-URL prefix is whitelist-checked and discarded rather than escaped.
+- **API surface** — every mutating endpoint carries `[Authorize(Policy = Policies.RequiresElevation)]` at the controller level; `RemovePair` gates deletion on the *saved* `AutoDeleteOnRemoval` rather than the caller's word, and refuses to touch pre-existing movies.
+
+---
+
+### PII Sweep
+
+**Ran**: 2026-09-09, over all 55 tracked files, including the working tree's uncommitted release edits.
+
+| Check | Result |
+| --- | --- |
+| 1. Drive-rooted / UNC / home paths | Clean — matches are regex escapes in source, repo-relative build paths in `CLAUDE.md`, Jellyfin's own install paths in `README.md`, and the sweep patterns matching their own documentation. All known-acceptable. |
+| 2. Email addresses | Clean — no matches in any tracked file. |
+| 3. This machine's identity (username, hostname, git user name/email) | Clean — the only matches are the project's GitHub owner handle, which is known-acceptable. |
+| 4. Dotted quads | Clean — all 20 distinct matches are assembly/ABI version numbers. |
+| 5. Comment read-through (538 comment lines) | Clean — every match for personal-sounding language is a generic reference to "the user" meaning the plugin's end user, or README FAQ phrasing addressed to the reader. Nothing identifies a person or machine. |
+
+The newly added `agentic/tools/abi-probe/` files were included and are clean: the probe takes all
+paths as arguments, resolves the rest relative to the script's own directory or the system temp
+path, and contains no absolute path, credential or machine detail.
+
+---
+
+### Scratchpad & Temporary File Sweep
+
+**Promoted to `tools/`**, two things:
+
+1. The Jellyfin ABI probe, as `agentic/tools/abi-probe/` — `AbiProbe.csproj`, `Program.cs` (a
+   `MetadataLoadContext` surface dumper), and `Compare-JellyfinAbi.ps1` (a driver that materialises
+   each version's dependency closure, dumps both surfaces and diffs them). It backs the rc4 -> GA
+   verification above, and will be needed again at the next Jellyfin version bump. Verified working
+   end-to-end from its committed location, reproducing the 21-removed/63-added result.
+2. The audit harness, as `agentic/tools/audit-harness/` — 21 behavioural checks over
+   `BuildHardLinkPath`, `PairStore` and the provider-ID escaping, referencing the plugin as a
+   project so it always runs against the working tree. It is the evidence behind the "Fixed" status
+   on issues 1, 2, 3 and 6 above, and is exactly the case the promotion rule exists for: a harness
+   cited by an audit but living only in a scratchpad cannot be re-run at the next release.
+
+**Deleted**: two extracted Jellyfin assembly sets (rc4 and GA, 7 assemblies each), two full published
+dependency closures (20 and 30 assemblies) and the throwaway reference projects that produced them,
+both API surface dumps, the diff output, the probe's scratch build tree, a temporary comment listing
+used for the PII sweep, and the scratch copies of the prose spliced into this entry. No Jellyfin
+server binary, server data or user data was left in the scratchpad or anywhere else; the ABI driver
+script deletes its own working directory on exit unless `-KeepWork` is passed, and the audit harness
+deletes its temporary store directory in a `finally`. Both were confirmed after their runs.
+
+Neither promoted tool's `bin/`/`obj/` is tracked — the repository's `.gitignore` matches those at any
+depth — and `agentic/**` is excluded from the plugin's own compile globs (issue below), so a tooling
+project under `agentic/` cannot leak into the shipped assembly.
+
+---
+
 ## Audit: 2026-08-24 (Session 16 — Cross-link settings removal, badge artwork, script delivery)
 
 **Scope**: Everything changed after the Session 15 audit, all of it inside the cross-link feature and none of it released:

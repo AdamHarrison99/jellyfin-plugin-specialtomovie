@@ -4,6 +4,7 @@ using System.Text.Json;
 using Jellyfin.Plugin.SpecialToMovie.Data;
 using Jellyfin.Plugin.SpecialToMovie.Lookup;
 using Jellyfin.Plugin.SpecialToMovie.Models;
+using Jellyfin.Plugin.SpecialToMovie.Services;
 using Jellyfin.Plugin.SpecialToMovie.Tasks;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Common.Api;
@@ -43,29 +44,6 @@ public class SpecialToMovieController : ControllerBase
         _logger = logger;
     }
 
-    private void DeleteItemWithFiles(Guid? itemId)
-    {
-        if (itemId == null || itemId == Guid.Empty)
-        {
-            return;
-        }
-
-        var item = _libraryManager.GetItemById(itemId.Value);
-        if (item == null)
-        {
-            return;
-        }
-
-        try
-        {
-            _libraryManager.DeleteItem(item, new DeleteOptions { DeleteFileLocation = true });
-            _logger.LogInformation("Deleted {Name} with files via Jellyfin", item.Name);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to delete item {Id} via Jellyfin", itemId);
-        }
-    }
 
     [HttpPost("RemoveAllLinks")]
     [ProducesResponseType(StatusCodes.Status200OK)]
@@ -101,7 +79,7 @@ public class SpecialToMovieController : ControllerBase
 
         foreach (var movieItemId in movieItemIds)
         {
-            DeleteItemWithFiles(movieItemId);
+            LinkedItemDeleter.DeleteWithFiles(_libraryManager, _logger, movieItemId);
         }
 
         _logger.LogInformation(
@@ -186,7 +164,7 @@ public class SpecialToMovieController : ControllerBase
 
         foreach (var movieItemId in toDelete)
         {
-            DeleteItemWithFiles(movieItemId);
+            LinkedItemDeleter.DeleteWithFiles(_libraryManager, _logger, movieItemId);
         }
 
         return Ok(new { Removed = toRemove.Count });
@@ -216,7 +194,7 @@ public class SpecialToMovieController : ControllerBase
         if (request.DeleteMedia && !pair.IsExistingMovie &&
             Plugin.Instance?.Configuration.AutoDeleteOnRemoval == true)
         {
-            DeleteItemWithFiles(pair.MovieItemId);
+            LinkedItemDeleter.DeleteWithFiles(_libraryManager, _logger, pair.MovieItemId);
             deletedMedia = true;
         }
 
