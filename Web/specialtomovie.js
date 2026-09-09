@@ -36,6 +36,10 @@
     // Another plugin that also forces its links last would otherwise trade moves with us forever.
     var MAX_MOVES = 8;
 
+    // How far up the tree to look for the row of brand badges. Four hops clears the wrapper
+    // elements a converting plugin realistically adds without widening the search to the page.
+    var MAX_ROW_HOPS = 4;
+
     // Text nodes the web client puts between links. Commas are what Jellyfin ships; the others are
     // here because a separator left dangling beside a badge looks broken, and which character a
     // given client or theme uses is not worth being wrong about.
@@ -227,17 +231,15 @@
         return hasPicture && captionSuppressed(anchor, style);
     }
 
-    // Is this row rendered as brand badges rather than text? Jellyfin ships text links; plugins
-    // such as Jellyfin Enhanced can replace them with logo tiles, and that is a per-install, even
-    // per-setting choice. Rather than detect a particular plugin by class name - which would break
-    // the moment it renamed anything - ask the row what it currently looks like.
-    function rowIsBadges(container, self) {
-        if (!container || !container.querySelectorAll) {
-            return false;
+    // The first badge-like link inside this subtree, or null. Returning the element rather than a
+    // boolean is what lets the caller both join the row it belongs to and copy its measurements.
+    function findBadgeIn(root, self) {
+        if (!root || !root.querySelectorAll) {
+            return null;
         }
 
-        var anchors = container.querySelectorAll('a');
-        var view = container.ownerDocument ? container.ownerDocument.defaultView : null;
+        var anchors = root.querySelectorAll('a');
+        var view = root.ownerDocument ? root.ownerDocument.defaultView : null;
 
         for (var i = 0; i < anchors.length; i++) {
             var other = anchors[i];
@@ -246,11 +248,86 @@
             }
 
             if (isBadgeAnchor(other, view)) {
-                return true;
+                return other;
             }
         }
 
-        return false;
+        return null;
+    }
+
+    // Find the row of brand badges this link should join, if there is one.
+    //
+    // Looking only at the link's own parent was not enough. A plugin that converts the text links
+    // into logo tiles may put those tiles in a container of its own, leaving the plugin's link
+    // behind in the original one - and a parent holding nothing but our link looks exactly like a
+    // text row, so the link stayed text on one side of the pair while rendering correctly on the
+    // other. Searching upwards finds the badges wherever they were put; returning the badge itself
+    // means the link is then moved in beside them rather than being styled to look like a tile from
+    // outside the row, which is what alignment actually depends on.
+    //
+    // The walk is bounded because the search widens at every hop: far enough up, every link on the
+    // page is in scope and any badge anywhere would count as proof this row is badges.
+    function findBadgeRow(anchor) {
+        var node = anchor.parentNode;
+        var hops = 0;
+
+        while (node && node.nodeType === 1 && node !== document.body && hops < MAX_ROW_HOPS) {
+            var badge = findBadgeIn(node, anchor);
+            if (badge && badge.parentNode) {
+                return { badge: badge, container: badge.parentNode };
+            }
+
+            node = node.parentNode;
+            hops++;
+        }
+
+        return null;
+    }
+
+    // Properties copied from a neighbouring badge so the tile sits on the same line as the rest of
+    // the row. Kept as a list because the text form has to remove exactly what the badge form set.
+    var MATCHED_PROPERTIES = [
+        'height', 'width', 'display', 'vertical-align', 'align-self',
+        'margin-top', 'margin-bottom', 'margin-left', 'margin-right'
+    ];
+
+    // Size and align the tile from a real neighbour instead of a fixed 28px. The row's logos are
+    // whatever height that install's theme and plugins make them, so a hard-coded box lines up only
+    // by luck - it was visibly out of line against a real row. The tile stays square: it is a mark,
+    // not a wordmark, so it matches the row's height and not any particular logo's width.
+    function matchBadgeMetrics(anchor, badge) {
+        var view = anchor.ownerDocument ? anchor.ownerDocument.defaultView : null;
+        var style = computed(view, badge);
+        if (!style) {
+            return;
+        }
+
+        var rect = badge.getBoundingClientRect ? badge.getBoundingClientRect() : null;
+        if (rect && rect.height > 0) {
+            anchor.style.setProperty('height', rect.height + 'px', 'important');
+            anchor.style.setProperty('width', rect.height + 'px', 'important');
+        }
+
+        // 'inline' would collapse a box whose content is a background image, and 'none' would hide
+        // it outright; anything else the row uses is worth matching.
+        var display = style.display;
+        if (display && display !== 'inline' && display !== 'none') {
+            anchor.style.setProperty('display', display, 'important');
+        }
+
+        ['vertical-align', 'align-self', 'margin-top', 'margin-bottom',
+            'margin-left', 'margin-right'].forEach(function (prop) {
+            var value = style.getPropertyValue(prop);
+            if (value) {
+                anchor.style.setProperty(prop, value, 'important');
+            }
+        });
+    }
+
+    function clearBadgeMetrics(anchor) {
+        for (var i = 0; i < MATCHED_PROPERTIES.length; i++) {
+            anchor.style.removeProperty(MATCHED_PROPERTIES[i]);
+        }
     }
 
     function parseRgb(value) {
@@ -408,8 +485,9 @@
             // Match the row. Among brand badges a lone text link looks like a mistake, and among
             // text links a lone badge looks like one just as much, so the row decides — not a
             // setting, and not an assumption about which plugins are installed.
-            var container = anchor.parentNode;
-            var asBadge = rowIsBadges(container, anchor);
+            var row = findBadgeRow(anchor);
+            var asBadge = !!row;
+            var container = asBadge ? row.container : anchor.parentNode;
 
             if (asBadge) {
                 var caption = (anchor.textContent || '').trim();
@@ -420,8 +498,10 @@
 
                 anchor.classList.add('specialtomovie-badge');
                 anchor.style.removeProperty('color');
+                matchBadgeMetrics(anchor, row.badge);
             } else {
                 anchor.classList.remove('specialtomovie-badge');
+                clearBadgeMetrics(anchor);
                 applyContrastColour(anchor);
             }
 

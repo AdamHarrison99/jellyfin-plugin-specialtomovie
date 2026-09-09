@@ -192,6 +192,50 @@ function clickOn(dom, el, opts) {
     check('no doubled separators', doubled === 0, 'doubled=' + doubled);
     check('single cross-link still present', row.querySelectorAll('a[href*="stm="]').length === 1);
 
+    // ---- 10. The badges live in a container of their own ----
+    // The reported shape: a plugin converts the text links into tiles and puts them somewhere else,
+    // leaving the cross-link behind in the original container. Looking only at the link's own parent
+    // saw a row of one and called it text, which is why one side of the pair rendered as a badge and
+    // the other stayed as words.
+    console.log('\n[10] Badges in a separate container');
+    dom = new JSDOM(
+        '<!doctype html><html><body style="background-color:rgb(16,16,16)">' +
+        '  <div id="itemDetailPage">' +
+        '    <div class="itemExternalLinks">' +
+        '      <a href="https://host:8096/web/#/details?id=' + MOVIE_ID + '&serverId=s1&stm=m" target="_blank">Movie Version</a>' +
+        '    </div>' +
+        '    <div class="converted-badges">' +
+        '      <a href="https://anidb.net/a1" style="display:inline-block;vertical-align:middle;margin:0px 4px;text-indent:-9999px;overflow:hidden"><img src="x.png">aniDB</a>' +
+        '      <a href="https://imdb.com/t1" style="display:inline-block;vertical-align:middle;margin:0px 4px;text-indent:-9999px;overflow:hidden"><img src="y.png">IMDb</a>' +
+        '    </div>' +
+        '  </div>' +
+        '</body></html>',
+        { runScripts: 'dangerously', pretendToBeVisual: true, url: 'https://host:8096/web/' }
+    );
+    dom.window.eval(SCRIPT);
+    await sleep(300);
+
+    a = ours(dom);
+    const badgeRow = dom.window.document.querySelector('.converted-badges');
+    check('found the badge row it was not inside', a.classList.contains('specialtomovie-badge'),
+        'class=' + a.className);
+    check('moved into the badge container', a.parentNode === badgeRow,
+        'parent=' + a.parentNode.className);
+    check('last in the badge container', badgeRow.lastElementChild === a);
+    check('no leftover text colour', !a.style.color, 'color=' + a.style.color);
+
+    // ---- 11. Alignment is taken from a real neighbour, not hard-coded ----
+    console.log('\n[11] Metrics copied from a neighbouring badge');
+    check('display matched', a.style.display === 'inline-block', 'display=' + a.style.display);
+    check('vertical-align matched', a.style.verticalAlign === 'middle', 'va=' + a.style.verticalAlign);
+    check('left margin matched', a.style.marginLeft === '4px', 'ml=' + a.style.marginLeft);
+    check('right margin matched', a.style.marginRight === '4px', 'mr=' + a.style.marginRight);
+    // jsdom does not lay out, so getBoundingClientRect is all zeroes and the height/width copy is
+    // skipped rather than applied wrongly. Sizing needs a real browser; this only pins the rest.
+    check('no bogus zero-height box from a non-laying-out DOM',
+        a.style.height !== '0px' && a.style.width !== '0px',
+        'h=' + a.style.height + ' w=' + a.style.width);
+
     console.log('\n' + '='.repeat(46));
     console.log('pass ' + pass + '   fail ' + fail);
     process.exit(fail === 0 ? 0 : 1);

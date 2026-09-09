@@ -133,6 +133,21 @@ sweep working files, one of which held this machine's identity strings and was d
 Jellyfin server binaries, `library.db`, plugin configuration, `PairStore` JSON, API keys or exported
 logs were present anywhere. The scratchpad is empty.
 
+### Follow-up after v1.0.18 — two further defects from the field
+
+Shipping v1.0.18 fixed the four reported faults but surfaced two more, both in the badge path and
+both reported against a live install:
+
+| Symptom | Root cause | Fix |
+| --- | --- | --- |
+| The tile did not line up with the row's other logos | The badge was a hard-coded 28px box. The row's logos are whatever height the install's theme and plugins make them, so a fixed size lines up only by coincidence | `matchBadgeMetrics` copies height, display, vertical-align and margins from a neighbouring badge, keeping the tile square |
+| One side of the pair rendered as a badge, the other stayed as text | Badge detection only looked at the link's **own parent**. A plugin that converts text links into tiles can place those tiles in a container of its own, leaving the cross-link behind in the original one - and a parent holding nothing but our link looks exactly like a text row | `findBadgeRow` walks up to four ancestors to find the badge row wherever it is, and the link is moved **into** that container beside the badges rather than styled to imitate one from outside it |
+
+The second is the more instructive: the enhancement was still assuming a DOM shape, just a subtler
+one than the class names removed earlier in this session. Joining the row it finds, rather than
+decorating whatever container it happens to be in, removes the assumption rather than replacing it.
+Both are covered by checks 10 and 11 of the web client harness, which now runs **40 checks**.
+
 ### Resolved — `node_modules` is gitignored, not committed
 
 Vendoring `jsdom` into the repository was considered and rejected: it would have added **23 MB across

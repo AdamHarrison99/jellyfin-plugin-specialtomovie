@@ -47,10 +47,16 @@ falls through correctly; the notices are noise, not failures. Filter them with
 | 7 | The move budget is released once the row settles, so ordinary re-appends cannot exhaust it |
 | 8 | Links belonging to other plugins are neither upgraded nor swallowed by the click handler |
 | 9 | Loading the script a second time is inert |
+| 10 | The badge row is found and joined even when it is a **different container** from the one the cross-link was rendered into |
+| 11 | Size and alignment are copied from a neighbouring badge rather than hard-coded |
 
 ## Limits
 
-jsdom computes style but does not lay out, so `getBoundingClientRect` returns zeroes. The
-shape-based fallback in `captionSuppressed` — the one that catches a badge whose caption is hidden
-on a child element rather than on the anchor — is therefore **not** exercised here. Checks 1 and 8
-cover the CSS-based paths around it. Verify that fallback in a real browser.
+jsdom computes style but does not lay out, so `getBoundingClientRect` returns zeroes. Two things
+therefore go unexercised here and need a real browser:
+
+- the shape-based fallback in `captionSuppressed`, which catches a badge whose caption is hidden on a
+  child element rather than on the anchor. Checks 1 and 8 cover the CSS-based paths around it.
+- the height and width copy in `matchBadgeMetrics`. Check 11 pins the properties that come from
+  computed style — display, vertical-align, margins — and asserts the size copy is *skipped* rather
+  than applied as a zero-sized box, but the measurement itself cannot be verified without layout.
