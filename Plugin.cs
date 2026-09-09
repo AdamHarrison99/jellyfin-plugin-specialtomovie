@@ -8,9 +8,6 @@ using MediaBrowser.Model.Serialization;
 
 namespace Jellyfin.Plugin.SpecialToMovie;
 
-/// <summary>
-/// Plugin entry point.
-/// </summary>
 public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
 {
     public static readonly Guid PluginId = Guid.Parse("a1b2c3d4-5678-9abc-def0-123456789abc");

@@ -8,22 +8,6 @@
     "category": "General",
     "versions": [
       {
-        "version": "1.0.19.0",
-        "changelog": "Follow-up to 1.0.18 for the detail-page cross-links. The badge now joins the row of brand logos even when another plugin renders those logos into a container of its own, which previously left one side of a pair showing as plain text, and it takes its size and alignment from a neighbouring logo instead of a fixed box so it lines up with the rest of the row. Detail pages also do markedly less style and layout work on every render.",
-        "targetAbi": "12.0.0.0",
-        "sourceUrl": "https://github.com/AdamHarrison99/jellyfin-plugin-specialtomovie/releases/download/v1.0.19/specialtomovie-v1.0.19.zip",
-        "checksum": "4e825cffef123425d5c8a90397087123",
-        "timestamp": "2026-09-09T17:26:50Z"
-      },
-      {
-        "version": "1.0.18.0",
-        "changelog": "Fixes the detail-page cross-link buttons, which failed in four ways on real installs: no badge icon on rows that show brand logos, dark text on a dark theme, the wrong position in the row, and a first click that opened a new tab instead of navigating in the app. The links no longer depend on jellyfin-web class names, so a web client change can no longer disable them silently, and the rewritten index.html now sends Cache-Control so a stale cached copy cannot do the same.",
-        "targetAbi": "12.0.0.0",
-        "sourceUrl": "https://github.com/AdamHarrison99/jellyfin-plugin-specialtomovie/releases/download/v1.0.18/specialtomovie-v1.0.18.zip",
-        "checksum": "e9d3c5da38de9d56b78551b3bf664fce",
-        "timestamp": "2026-09-09T16:43:46Z"
-      },
-      {
         "version": "1.0.17.0",
         "changelog": "Jellyfin 12.0.0 general availability — the plugin now builds against the released 12.0.0 packages instead of 12.0.0-rc4. Adds cross-link buttons on the detail page to jump between a linked special and its movie, ignore list entries that can name a whole series, and pair removal that prompts differently depending on whether media files are affected. Scheduled task names are prefixed with the plugin name. Hardening from a full audit: the pair store no longer throws when its file cannot be written or read, provider IDs are escaped before use in TMDB/TVDB request paths, and full scans do less redundant work on large libraries.",
         "targetAbi": "12.0.0.0",

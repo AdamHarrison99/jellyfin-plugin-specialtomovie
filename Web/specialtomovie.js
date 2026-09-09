@@ -1,15 +1,9 @@
-// SpecialToMovie — detail page cross-link buttons.
-//
-// The links themselves are rendered server-side by the plugin's IExternalUrlProvider
-// implementations, so this script is pure progressive enhancement: it upgrades those anchors into
-// icon buttons, keeps them at the end of the row, and navigates in-app instead of opening a new
-// tab. If anything here fails the links still work as plain text links.
+// Detail-page cross-link buttons: progressive enhancement over server-rendered links.
+// See agentic/ARCHITECTURE.md, "Cross-link buttons", for every decision made here.
 (function () {
     'use strict';
 
-    // The injector adds the tag once per document, but a second copy - a stale service worker, a
-    // manual install into the web root alongside the injected tag - would otherwise register a
-    // second click handler and a second MutationObserver on the same page.
+    // ! A second copy would add a second click handler and a second observer.
     if (window.__specialToMovieLoaded) {
         return;
     }
@@ -18,53 +12,40 @@
 
     var LOG_PREFIX = '[SpecialToMovie]';
     var STYLE_ID = 'specialtomovie-links-styles';
+    var LINK_CLASS = 'specialtomovie-link';
     var UPGRADED_ATTR = 'data-stm-upgraded';
     var MOVES_ATTR = 'data-stm-moves';
+    var SIZE_VAR = '--stm-icon-size';
+    var GAP_VAR = '--stm-icon-gap';
+    var SHIFT_VAR = '--stm-icon-shift';
+    var MATCHED_ATTR = 'data-stm-matched';
 
-    // Our own marker is the only thing this matches on. An earlier version also required the link
-    // to sit inside `#itemDetailPage:not(.hide) .itemExternalLinks`, which tied the whole
-    // enhancement to two web-client class names; if either changed, the script silently did nothing
-    // and every link fell back to unstyled text that opened a new tab. The marker is ours, so it
-    // cannot drift, and parseLink rejects anything that merely happens to contain it.
+    // A bigger correction than this is not a row the icon belongs in.
+    var MAX_SHIFT = 40;
+
+    // ! Our own marker, and nothing about the web client's markup. parseLink does the vetting.
     var LINK_SELECTOR = 'a[href*="stm="]';
 
-    // The route and identifier shapes CrossLinkUrlBuilder emits. parseLink holds incoming links to
-    // exactly these.
+    // The route and identifier shapes CrossLinkUrlBuilder emits.
     var DETAILS_ROUTE = '/details';
     var ITEM_ID = /^[0-9a-fA-F]{8}-?(?:[0-9a-fA-F]{4}-?){3}[0-9a-fA-F]{12}$/;
 
-    // Another plugin that also forces its links last would otherwise trade moves with us forever.
+    // Stops a plugin that also forces its links last from trading moves with us forever.
     var MAX_MOVES = 8;
 
-    // How far up the tree to look for the row of brand badges. Four hops clears the wrapper
-    // elements a converting plugin realistically adds without widening the search to the page.
-    var MAX_ROW_HOPS = 4;
-
-    // Upper bound on links examined while looking for the row, however far the walk widens. A page
-    // with hundreds of links must not turn every render into a full sweep of them.
-    var MAX_ANCHORS_SCANNED = 60;
-
-    // Text nodes the web client puts between links. Commas are what Jellyfin ships; the others are
-    // here because a separator left dangling beside a badge looks broken, and which character a
-    // given client or theme uses is not worth being wrong about.
+    // Text nodes the web client puts between links. Jellyfin ships commas.
     var SEPARATOR = /^[\s,.;|·•-]+$/;
 
-    // One badge tile, inline so it renders on a server with no internet access. It is a complete
-    // self-coloured mark rather than a tinted glyph: the row it joins is a row of brand badges
-    // (IMDb, TMDB, Trakt, Jellyseerr), and a badge that recoloured itself with the theme would not
-    // belong there. Rounded square with a gentle gradient, sized and shaped like the logos beside
-    // it. Green because nothing else in that row is, so it reads as its own thing at a glance.
-    // The gradient runs light to dark across the diagonal, perpendicular to the chain, so the
-    // fall is visible on both sides of the glyph. The stops are deliberately far apart: at 28px on
-    // a phone a timid gradient is indistinguishable from flat colour, and a gradient nobody can see
-    // is not worth having. The range is spent on the dark end — a lighter light stop would start
-    // washing out the white chain, and the glyph reading clearly matters more than the sheen does.
-    //
-    // The mark is a chain link, drawn along the bottom-left to top-right diagonal so its axis runs
-    // corner to corner. Both directions of the pairing share it, exactly as each service in that
-    // row has one logo; which way it goes is obvious from the page you are on, and the tooltip and
-    // accessible name say so outright.
-    var BADGE = 'data:image/svg+xml;utf8,' + encodeURIComponent(
+    // Links other plugins add to this row, skipped when measuring. Names from Jellyfin-Enhanced.
+    var PLUGIN_LINK_CLASSES = [LINK_CLASS, 'letterboxd-link', 'seerr-link', 'arr-link',
+        'arr-tag-link'];
+
+    // What jellyfin-icon-metadata draws its logos at.
+    var DEFAULT_ICON_SIZE = 25;
+
+    // One inline SVG, so a server with no internet access still renders it.
+    // A chain link on a green rounded square; see agentic/ARCHITECTURE.md for the palette.
+    var ICON = 'data:image/svg+xml;utf8,' + encodeURIComponent(
         '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">' +
         '<defs><linearGradient id="a" x1="0" y1="0" x2="32" y2="32" ' +
         'gradientUnits="userSpaceOnUse">' +
@@ -77,6 +58,8 @@
         '<path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>' +
         '</g></svg>');
 
+    // ! The rule shape jellyfin-icon-metadata uses for every logo it draws.
+    // The caption stays in the DOM for screen readers, hidden the way that project hides its own.
     function injectStyles() {
         if (document.getElementById(STYLE_ID)) {
             return;
@@ -85,46 +68,44 @@
         var style = document.createElement('style');
         style.id = STYLE_ID;
         style.textContent =
-            '.specialtomovie-badge {' +
+            '.' + LINK_CLASS + ' {' +
+            '    background: none !important;' +
+            '    color: transparent !important;' +
+            '    padding: 0 !important;' +
+            '    font-size: 0 !important;' +
+            '}' +
+            '.' + LINK_CLASS + '::before {' +
+            '    content: "";' +
             '    display: inline-block;' +
-            '    width: 28px;' +
-            '    height: 28px;' +
-            // Matches the tile's own corner radius, so the box and the artwork agree.
-            '    border-radius: 6px;' +
-            '    vertical-align: middle;' +
-            '    margin: 0 2px;' +
-            '    background-image: url("' + BADGE + '");' +
+            '    width: var(' + SIZE_VAR + ', ' + DEFAULT_ICON_SIZE + 'px);' +
+            '    height: var(' + SIZE_VAR + ', ' + DEFAULT_ICON_SIZE + 'px);' +
+            '    background-image: url("' + ICON + '");' +
+            '    background-size: contain;' +
             '    background-repeat: no-repeat;' +
-            '    background-position: center;' +
-            '    background-size: 100% 100%;' +
-            // The caption stays in the accessible name; only its rendering is suppressed, and this
-            // holds the moment the web client re-renders the row and hands the text back.
-            '    text-indent: -9999px;' +
-            '    overflow: hidden;' +
-            '    white-space: nowrap;' +
-            '    transition: transform .12s ease, filter .12s ease;' +
+            // Matches the trailing space every logo in that row carries.
+            '    margin-right: 5px;' +
+            // Both written by matchRow; a relative offset keeps the line height untouched.
+            '    margin-left: var(' + GAP_VAR + ', 0px);' +
+            '    vertical-align: middle;' +
+            '    position: relative;' +
+            '    top: var(' + SHIFT_VAR + ', 0px);' +
             '}' +
-            '.specialtomovie-badge:hover, .specialtomovie-badge:focus-visible {' +
-            '    filter: brightness(1.12);' +
-            '    transform: translateY(-1px);' +
-            '}' +
-            '.specialtomovie-badge:focus-visible {' +
-            '    outline: 2px solid #5EDC86;' +
-            '    outline-offset: 2px;' +
-            '}' +
-            '@media (prefers-reduced-motion: reduce) {' +
-            '    .specialtomovie-badge { transition: none; }' +
-            '    .specialtomovie-badge:hover, .specialtomovie-badge:focus-visible {' +
-            '        transform: none;' +
-            '    }' +
+            // ! No hover treatment of our own, and the theme's button chrome cancelled.
+            // One tile reacting to the pointer in a row of logos that do not looks broken.
+            '.' + LINK_CLASS + ':hover,' +
+            '.' + LINK_CLASS + ':focus,' +
+            '.' + LINK_CLASS + ':active {' +
+            '    background: none !important;' +
+            '    background-color: transparent !important;' +
+            '    background-image: none !important;' +
+            '    filter: none !important;' +
+            '    border-color: transparent !important;' +
             '}';
         document.head.appendChild(style);
     }
 
-    // The server emits a full URL so that phone, tablet and TV apps can follow it. Inside the web
-    // client that form is the wrong one: it opens a new tab and reloads the whole app. Both forms
-    // carry the same hash, so the hash is all this needs — which is also what lets the click
-    // handler below work on an anchor that has not been upgraded yet.
+    // ! Every field is held to the exact shape this plugin emits.
+    // onClick cancels the browser default on whatever this accepts, for every click on the page.
     function parseLink(href) {
         var hash = (href || '').split('#')[1];
         if (!hash) {
@@ -140,10 +121,6 @@
         var marker = params.get('stm');
         var id = params.get('id');
 
-        // Every field is checked against the exact shape this plugin emits, not merely for being
-        // present. The click handler below cancels the browser's default on whatever this accepts,
-        // and it sees every click in the document, so a loose match here would let it swallow
-        // another plugin's link. Only the plugin's own route, its two markers and an item GUID pass.
         if (marker !== 'm' && marker !== 's') {
             return null;
         }
@@ -155,313 +132,80 @@
         return { marker: marker, id: id, hash: '#' + hash };
     }
 
-    function computed(view, el, pseudo) {
-        if (!view || !view.getComputedStyle) {
-            return null;
-        }
+    // A detail page is not deeply nested, and an unbounded walk runs per link per pass.
+    var MAX_HIDDEN_HOPS = 20;
 
-        try {
-            return view.getComputedStyle(el, pseudo || null);
-        } catch (err) {
-            return null;
-        }
-    }
-
-    function pseudoPaintsImage(anchor, view) {
-        var pseudos = ['::before', '::after'];
-        for (var i = 0; i < pseudos.length; i++) {
-            var ps = computed(view, anchor, pseudos[i]);
-            if (ps && ps.backgroundImage && ps.backgroundImage !== 'none') {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    // Is a caption present but not painted? The usual way to turn a text link into a logo is to
-    // keep the label for screen readers and push it out of view, so a label existing says nothing
-    // about how the row reads; only whether it is painted does. The old detector treated any anchor
-    // carrying text as a text link, which meant that on exactly the badge rows this is meant to
-    // recognise, every anchor was skipped and the row was judged to be text.
-    function captionSuppressed(anchor, style) {
-        if (style) {
-            if (parseFloat(style.textIndent) <= -999) {
-                return true;
-            }
-
-            if (parseFloat(style.fontSize) === 0) {
-                return true;
-            }
-        }
-
-        // Falls back to shape for the case CSS cannot answer: the label is hidden on a child rather
-        // than on the anchor, so the anchor still reports normal text metrics. A logo tile is
-        // roughly square; an icon sitting beside real words is much wider than it is tall, which is
-        // what keeps this false for icon-plus-text links.
-        if (anchor.getBoundingClientRect) {
-            var rect = anchor.getBoundingClientRect();
-            if (rect.height > 0 && rect.width > 0 && rect.width <= rect.height * 2.5) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    // Does this one anchor read as a brand badge - a picture and no visible words? The tests are
-    // ordered cheapest first, and deliberately so: this runs for every link in the row on every
-    // pass, and both getComputedStyle with a pseudo-element and getBoundingClientRect make the
-    // browser resolve style or layout. On a plain text row - the common case, and the one where the
-    // answer is no - the early exits hold it to a single style read per link and no layout at all.
-    function isBadgeAnchor(anchor, view) {
-        var hasPicture = !!(anchor.querySelector && anchor.querySelector('img, svg, picture'));
-        var hasText = !!(anchor.textContent || '').trim();
-
-        if (hasPicture && !hasText) {
-            return true;
-        }
-
-        var style = computed(view, anchor);
-        if (!hasPicture) {
-            hasPicture = !!(style && style.backgroundImage && style.backgroundImage !== 'none');
-        }
-
-        if (!hasText) {
-            return hasPicture || pseudoPaintsImage(anchor, view);
-        }
-
-        // A link with words is a text link unless it paints a picture and hides the words.
-        return hasPicture && captionSuppressed(anchor, style);
-    }
-
-    // The first badge-like link inside this subtree, or null. Returning the element rather than a
-    // boolean is what lets the caller both join the row it belongs to and copy its measurements.
-    // Marks anchors already judged during the current findBadgeRow walk. The search widens at every
-    // hop, so without this each hop re-tests everything the previous one did - and every test costs
-    // a style resolution. Measured on a ten-link text row, the walk cost around 320 style
-    // resolutions per pass before this; the budget below caps the pathological case besides.
-    var scanToken = 0;
-
-    function findBadgeIn(root, self, budget) {
-        if (!root || !root.querySelectorAll) {
-            return null;
-        }
-
-        var anchors = root.querySelectorAll('a');
-        var view = root.ownerDocument ? root.ownerDocument.defaultView : null;
-
-        for (var i = 0; i < anchors.length; i++) {
-            var other = anchors[i];
-            if (other === self || other.stmScan === scanToken ||
-                other.classList.contains('specialtomovie-link')) {
-                continue;
-            }
-
-            if (budget.left <= 0) {
-                return null;
-            }
-
-            other.stmScan = scanToken;
-            budget.left--;
-
-            if (isBadgeAnchor(other, view)) {
-                return other;
-            }
-        }
-
-        return null;
-    }
-
-    // Find the row of brand badges this link should join, if there is one.
-    //
-    // Looking only at the link's own parent was not enough. A plugin that converts the text links
-    // into logo tiles may put those tiles in a container of its own, leaving the plugin's link
-    // behind in the original one - and a parent holding nothing but our link looks exactly like a
-    // text row, so the link stayed text on one side of the pair while rendering correctly on the
-    // other. Searching upwards finds the badges wherever they were put; returning the badge itself
-    // means the link is then moved in beside them rather than being styled to look like a tile from
-    // outside the row, which is what alignment actually depends on.
-    //
-    // The walk is bounded because the search widens at every hop: far enough up, every link on the
-    // page is in scope and any badge anywhere would count as proof this row is badges.
-    function findBadgeRow(anchor) {
-        var node = anchor.parentNode;
+    // ! Asks the computed style, never the layout: an unlaid-out page has no rects either.
+    // See agentic/ARCHITECTURE.md on the hidden detail-page copies.
+    function isHidden(el) {
+        var node = el;
         var hops = 0;
-        var budget = { left: MAX_ANCHORS_SCANNED };
 
-        scanToken++;
-
-        while (node && node.nodeType === 1 && node !== document.body && hops < MAX_ROW_HOPS) {
-            var badge = findBadgeIn(node, anchor, budget);
-            if (badge && badge.parentNode) {
-                return { badge: badge, container: badge.parentNode };
-            }
-
-            node = node.parentNode;
-            hops++;
-        }
-
-        return null;
-    }
-
-    // Properties copied from a neighbouring badge so the tile sits on the same line as the rest of
-    // the row. Kept as a list because the text form has to remove exactly what the badge form set.
-    var MATCHED_PROPERTIES = [
-        'height', 'width', 'display', 'vertical-align', 'align-self',
-        'margin-top', 'margin-bottom', 'margin-left', 'margin-right'
-    ];
-
-    // Size and align the tile from a real neighbour instead of a fixed 28px. The row's logos are
-    // whatever height that install's theme and plugins make them, so a hard-coded box lines up only
-    // by luck - it was visibly out of line against a real row. The tile stays square: it is a mark,
-    // not a wordmark, so it matches the row's height and not any particular logo's width.
-    function matchBadgeMetrics(anchor, badge) {
-        // Already sized against this same neighbour: nothing to do. getBoundingClientRect forces
-        // layout, so re-measuring on every mutation made each render more expensive than the render
-        // itself - measured at 140 forced layouts across ten passes of a badge row. An anchor that
-        // the web client has rebuilt arrives with no inline height and is measured again, which is
-        // exactly when the row's size can have changed.
-        if (anchor.style.height && anchor.stmRef === badge) {
-            return;
-        }
-
-        var view = anchor.ownerDocument ? anchor.ownerDocument.defaultView : null;
-        var style = computed(view, badge);
-        if (!style) {
-            return;
-        }
-
-        var rect = badge.getBoundingClientRect ? badge.getBoundingClientRect() : null;
-        if (rect && rect.height > 0) {
-            anchor.style.setProperty('height', rect.height + 'px', 'important');
-            anchor.style.setProperty('width', rect.height + 'px', 'important');
-            anchor.stmRef = badge;
-        }
-
-        // 'inline' would collapse a box whose content is a background image, and 'none' would hide
-        // it outright; anything else the row uses is worth matching.
-        var display = style.display;
-        if (display && display !== 'inline' && display !== 'none') {
-            anchor.style.setProperty('display', display, 'important');
-        }
-
-        ['vertical-align', 'align-self', 'margin-top', 'margin-bottom',
-            'margin-left', 'margin-right'].forEach(function (prop) {
-            var value = style.getPropertyValue(prop);
-            if (value) {
-                anchor.style.setProperty(prop, value, 'important');
-            }
-        });
-    }
-
-    function clearBadgeMetrics(anchor) {
-        for (var i = 0; i < MATCHED_PROPERTIES.length; i++) {
-            anchor.style.removeProperty(MATCHED_PROPERTIES[i]);
-        }
-
-        // Drop the memo with the styles it belongs to, so returning to badge form re-measures.
-        anchor.stmRef = null;
-    }
-
-    function parseRgb(value) {
-        var match = /^rgba?\(([^)]+)\)/.exec(value || '');
-        if (!match) {
-            return null;
-        }
-
-        var parts = match[1].split(/[,\s/]+/).filter(Boolean).map(parseFloat);
-        if (parts.length < 3 || parts.some(isNaN)) {
-            return null;
-        }
-
-        return {
-            r: parts[0],
-            g: parts[1],
-            b: parts[2],
-            a: parts.length > 3 ? parts[3] : 1
-        };
-    }
-
-    // What is actually behind this link? Walks up until something paints an opaque background.
-    // The theme is not knowable from prefers-color-scheme here: Jellyfin themes are chosen in the
-    // app, so a light theme on a machine set to dark is perfectly normal and vice versa. The only
-    // reliable answer is what the pixels behind the text are, so that is what this asks for, with
-    // the OS preference kept as a last resort for when nothing up the tree is opaque.
-    function backdropIsDark(anchor) {
-        var view = anchor.ownerDocument ? anchor.ownerDocument.defaultView : null;
-        var node = anchor.parentElement;
-
-        while (node && node.nodeType === 1) {
-            var style = computed(view, node);
-            var colour = style && parseRgb(style.backgroundColor);
-            if (colour && colour.a >= 0.5) {
-                var luminance = (0.2126 * colour.r + 0.7152 * colour.g + 0.0722 * colour.b) / 255;
-                return luminance < 0.5;
+        while (node && node.nodeType === 1 && hops < MAX_HIDDEN_HOPS) {
+            var style = window.getComputedStyle(node);
+            if (style && (style.display === 'none' || style.visibility === 'hidden')) {
+                return true;
             }
 
             node = node.parentElement;
+            hops++;
         }
 
-        if (view && view.matchMedia) {
-            try {
-                return !view.matchMedia('(prefers-color-scheme: light)').matches;
-            } catch (err) {
-                // Falls through to the default below.
+        return false;
+    }
+
+    // The height the row's own links render their content at, after Jellyfin-Enhanced.
+    // ! The pseudo-element is asked first: a logo anchor's own rect has zero height.
+    function iconSize(container, self) {
+        var anchors = container.querySelectorAll('a');
+
+        for (var i = 0; i < anchors.length; i++) {
+            var anchor = anchors[i];
+            if (anchor === self || isPluginLink(anchor)) {
+                continue;
+            }
+
+            var pseudo = parseFloat(window.getComputedStyle(anchor, '::before').height);
+            if (isFinite(pseudo) && pseudo > 0) {
+                return pseudo;
+            }
+
+            var rect = anchor.getBoundingClientRect();
+            var style = window.getComputedStyle(anchor);
+            var chrome = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom) +
+                parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth);
+            var height = rect.height - (isFinite(chrome) ? chrome : 0);
+
+            if (isFinite(height) && height > 0) {
+                return height;
             }
         }
 
-        return true;
+        return DEFAULT_ICON_SIZE;
     }
 
-    // Only for the text form; the badge paints its own colours and must not be touched. Set as an
-    // important inline value because what it overrides is the web client's own styling for links in
-    // this row, which an ordinary inline value does not always outrank.
-    function applyContrastColour(anchor) {
-        // Same reasoning as matchBadgeMetrics: the walk costs a style resolution per ancestor, and
-        // the answer cannot change for an anchor that is already coloured. A rebuilt anchor has no
-        // inline colour and is recomputed.
-        if (anchor.style.color) {
-            return;
-        }
-
-        var colour = backdropIsDark(anchor) ? '#e9e9e9' : '#1c1c1c';
-        try {
-            anchor.style.setProperty('color', colour, 'important');
-        } catch (err) {
-            anchor.style.color = colour;
-        }
+    // Where a link in this row is painted, vertically.
+    // ! A zero-height rect is a baseline, and a logo's icon is centred on it.
+    function visualCentre(el) {
+        var rect = el.getBoundingClientRect();
+        return rect.height > 0 ? rect.top + rect.height / 2 : rect.top;
     }
 
-    // Our badge carries no text, so the ", " the web client puts between links would be left
-    // dangling beside it. Drop exactly one — the one before it, or the one after when the badge
-    // leads the row — so the remaining text links stay correctly punctuated.
-    function dropSeparator(anchor) {
-        var candidates = [anchor.previousSibling, anchor.nextSibling];
-
-        for (var i = 0; i < candidates.length; i++) {
-            var node = candidates[i];
-            if (node && node.nodeType === 3 && SEPARATOR.test(node.nodeValue || '')) {
-                node.parentNode.removeChild(node);
-                return;
+    function isPluginLink(anchor) {
+        for (var i = 0; i < PLUGIN_LINK_CLASSES.length; i++) {
+            if (anchor.classList.contains(PLUGIN_LINK_CLASSES[i])) {
+                return true;
             }
         }
+
+        return false;
     }
 
-    // Last in the row, where an extra link reads as an addition to the set rather than an
-    // interruption of it. Enforced on every pass rather than once at upgrade time: the row is
-    // rebuilt on each render and other plugins append to it after we do, so a position set once
-    // does not stay set. The move counter is the stop for the pathological case of another plugin
-    // that also insists on being last — without it the two of us would rewrite the DOM forever.
-    function moveToEnd(anchor, container, asBadge) {
-        if (!container) {
-            return;
-        }
-
-        // Already last: the row is settled, so forget any moves it took to get here. Without this
-        // the budget is spent by ordinary re-appends over a long session and the link eventually
-        // stops being placed at all. A genuine fight never reaches this line, so it still stops.
-        if (container.lastElementChild === anchor) {
+    // Last in the row, enforced every pass: the row is rebuilt on each render.
+    // The move counter is the stop for another plugin that also insists on being last.
+    function moveToEnd(anchor, container) {
+        if (!container || container.lastElementChild === anchor) {
+            // Settled, so forget the moves it took. Ordinary re-appends must not spend the budget.
             if (anchor.hasAttribute(MOVES_ATTR)) {
                 anchor.removeAttribute(MOVES_ATTR);
             }
@@ -476,17 +220,93 @@
 
         anchor.setAttribute(MOVES_ATTR, String(moves + 1));
 
-        // Take the separator that belonged to the old position with it, or the row is left with a
-        // comma leading nowhere.
-        dropSeparator(anchor);
-        container.appendChild(anchor);
+        // A gap measured against the old neighbour describes nothing once we move.
+        anchor.removeAttribute(MATCHED_ATTR);
 
-        // A text link at the end still needs to be joined to the list it now ends.
-        if (!asBadge) {
-            var prev = anchor.previousSibling;
-            var joined = prev && prev.nodeType === 3 && SEPARATOR.test(prev.nodeValue || '');
-            if (!joined && prev) {
-                container.insertBefore(document.createTextNode(', '), anchor);
+        // Leaving it behind would leave a punctuation mark leading nowhere.
+        dropSeparator(anchor);
+
+        // ! The row's spacing is the whitespace between anchors, not anything they carry.
+        // Jellyfin-Enhanced appends the same space before its own link.
+        container.appendChild(document.createTextNode(' '));
+        container.appendChild(anchor);
+    }
+
+    // The gap this row leaves between two of its own links, as a median.
+    // Only pairs sharing a line count; a pair split across a wrap says nothing.
+    function rowGap(container, self) {
+        var links = container.querySelectorAll('a');
+        var gaps = [];
+
+        for (var i = 1; i < links.length; i++) {
+            if (links[i] === self || links[i - 1] === self) {
+                continue;
+            }
+
+            var a = links[i - 1].getBoundingClientRect();
+            var b = links[i].getBoundingClientRect();
+            if (Math.abs(b.top - a.top) < 2 && b.left >= a.right - 0.5) {
+                gaps.push(b.left - a.right);
+            }
+        }
+
+        if (!gaps.length) {
+            return null;
+        }
+
+        gaps.sort(function (x, y) { return x - y; });
+        return gaps[Math.floor(gaps.length / 2)];
+    }
+
+    // Sit this icon where the row's own links sit: same gap before it, same line.
+    // ! Both corrections are measured, never assumed; see agentic/ARCHITECTURE.md.
+    function matchRow(anchor, container) {
+        if (anchor.hasAttribute(MATCHED_ATTR)) {
+            return;
+        }
+
+        var previous = anchor.previousElementSibling;
+        if (!previous) {
+            // A row holding only this link is spaced by whatever precedes it.
+            anchor.setAttribute(MATCHED_ATTR, '1');
+            return;
+        }
+
+        // ! Zeroed first, or the measurement reads back its own correction.
+        anchor.style.setProperty(GAP_VAR, '0px');
+        anchor.style.setProperty(SHIFT_VAR, '0px');
+
+        var theirs = previous.getBoundingClientRect();
+        var mine = anchor.getBoundingClientRect();
+
+        // Not laid out yet. Leaving the attribute unset lets the next pass try again.
+        if (!theirs.width && !theirs.height && !mine.width && !mine.height) {
+            return;
+        }
+
+        var shift = visualCentre(previous) - visualCentre(anchor);
+        if (isFinite(shift) && Math.abs(shift) <= MAX_SHIFT) {
+            anchor.style.setProperty(SHIFT_VAR, (Math.round(shift * 100) / 100) + 'px');
+        }
+
+        var target = rowGap(container, anchor);
+        if (target !== null && Math.abs(mine.top - theirs.top) <= 2) {
+            var correction = target - (mine.left - theirs.right);
+            anchor.style.setProperty(GAP_VAR, (correction > 0.5 ? correction : 0) + 'px');
+        }
+
+        anchor.setAttribute(MATCHED_ATTR, '1');
+    }
+
+    // Exactly one separator beside the link: the one before it, or the one after when it leads.
+    function dropSeparator(anchor) {
+        var candidates = [anchor.previousSibling, anchor.nextSibling];
+
+        for (var i = 0; i < candidates.length; i++) {
+            var node = candidates[i];
+            if (node && node.nodeType === 3 && SEPARATOR.test(node.nodeValue || '')) {
+                node.parentNode.removeChild(node);
+                return;
             }
         }
     }
@@ -498,23 +318,39 @@
                 return;
             }
 
+            // ! Stripped, not merely skipped: a page hidden while styled is shown again later.
+            if (isHidden(anchor)) {
+                anchor.classList.remove(LINK_CLASS);
+                anchor.style.removeProperty(SIZE_VAR);
+                anchor.style.removeProperty(GAP_VAR);
+                anchor.style.removeProperty(SHIFT_VAR);
+                anchor.removeAttribute(MATCHED_ATTR);
+                return;
+            }
+
+            var caption = (anchor.getAttribute('aria-label') ||
+                anchor.textContent || '').trim();
+
             if (!anchor.hasAttribute(UPGRADED_ATTR)) {
-                anchor.classList.add('specialtomovie-link');
                 anchor.setAttribute('data-specialtomovie', link.marker === 's' ? 'special' : 'movie');
                 anchor.setAttribute('data-linked-id', link.id);
                 anchor.setAttribute(UPGRADED_ATTR, '1');
             }
 
-            // Reduce the link to its hash so the web client navigates in place instead of
-            // reloading itself in a new tab. This is deliberately not conditional on the URL being
-            // same-origin: these links always point at an item on the server that served this
-            // page, so the hash is always the right way to reach it from here — and that stays
-            // true when a reverse proxy hands the server a host name the browser cannot resolve,
-            // which is exactly the case a same-origin test would get wrong.
-            //
-            // Re-applied on every pass rather than once, because the web client rebuilds this row
-            // from the server DTO and the fresh anchor arrives with the absolute href and
-            // target="_blank" restored.
+            // The caption is hidden, not removed, so it has to stay reachable by name.
+            // Re-applied every pass: a rebuilt anchor arrives with neither attribute.
+            if (caption) {
+                if (anchor.getAttribute('title') !== caption) {
+                    anchor.setAttribute('title', caption);
+                }
+
+                if (anchor.getAttribute('aria-label') !== caption) {
+                    anchor.setAttribute('aria-label', caption);
+                }
+            }
+
+            // ! Reduced to a hash unconditionally, same-origin or not.
+            // The web client rebuilds the row, and the fresh anchor has the absolute URL back.
             if (anchor.getAttribute('href') !== link.hash) {
                 anchor.setAttribute('href', link.hash);
             }
@@ -523,40 +359,29 @@
                 anchor.removeAttribute('target');
             }
 
-            // Match the row. Among brand badges a lone text link looks like a mistake, and among
-            // text links a lone badge looks like one just as much, so the row decides — not a
-            // setting, and not an assumption about which plugins are installed.
-            var row = findBadgeRow(anchor);
-            var asBadge = !!row;
-            var container = asBadge ? row.container : anchor.parentNode;
+            var container = anchor.parentNode;
 
-            if (asBadge) {
-                var caption = (anchor.textContent || '').trim();
-                if (caption) {
-                    anchor.setAttribute('title', caption);
-                    anchor.setAttribute('aria-label', caption);
-                }
-
-                anchor.classList.add('specialtomovie-badge');
-                anchor.style.removeProperty('color');
-                matchBadgeMetrics(anchor, row.badge);
-            } else {
-                anchor.classList.remove('specialtomovie-badge');
-                clearBadgeMetrics(anchor);
-                applyContrastColour(anchor);
+            // ! Asked every pass. A re-render resets className while keeping the attributes,
+            // so a remembered "done" flag once sat over a link gone back to plain text.
+            if (!anchor.classList.contains(LINK_CLASS)) {
+                anchor.classList.add(LINK_CLASS);
             }
 
-            moveToEnd(anchor, container, asBadge);
+            if (container && container.querySelectorAll) {
+                anchor.style.setProperty(SIZE_VAR, iconSize(container, anchor) + 'px');
+            }
+
+            moveToEnd(anchor, container);
+
+            // After placement, to measure against the link this one ends up beside.
+            if (container && container.querySelectorAll) {
+                matchRow(anchor, container);
+            }
         });
     }
 
-    // Navigation is handled here rather than left to the rewritten href alone. The row is rebuilt
-    // on every render, so there is always a window in which a freshly rendered anchor still carries
-    // the absolute URL and target="_blank"; a click landing inside that window opened a new tab,
-    // and only the second click — on the anchor the upgrade had by then caught up with — stayed in
-    // the app. Listening in the capture phase means the click is ours before the anchor's own
-    // default runs, whatever state the anchor is in, and parseLink reads the item out of the
-    // absolute URL just as well as out of the rewritten hash.
+    // ! Capture phase, so the click is ours whatever state the anchor is in.
+    // A freshly rendered anchor still carries the absolute URL and target for a moment.
     function onClick(event) {
         if (event.defaultPrevented || event.button !== 0 ||
             event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
@@ -616,8 +441,8 @@
             }
         };
 
-        // The web client rewrites the external links container on every render, so the upgrade has
-        // to be re-applied rather than done once.
+        // ! The external links container is rewritten on every render.
+        // A style filter is deliberately absent: our own inline writes would retrigger it.
         new MutationObserver(schedule).observe(document.body, {
             childList: true,
             subtree: true,

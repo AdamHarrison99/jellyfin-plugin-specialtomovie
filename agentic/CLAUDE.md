@@ -8,6 +8,7 @@
 ├── agentic/                        ← agent-facing docs
 │   ├── CLAUDE.md                   ← this file
 │   ├── AUDIT.md                    ← security/efficiency audit history
+│   ├── ARCHITECTURE.md             ← why the code is shaped this way; where comment rationale lives
 │   ├── IDEAS.md                    ← prioritised feature backlog
 │   ├── HANDOFF.md                  ← codebase map, read first in a new session
 │   ├── JellyfinPlugin-SpecialToMovie plan.md   ← original design doc (historical)
@@ -95,28 +96,102 @@ The manifest.json in the repo is what Jellyfin servers poll for updates — push
 
 ## Pre-Release Audit
 
-Before every new version release, perform a full security and efficiency audit of the entire codebase:
+Run this before every release, and whenever asked to "audit". It has nine steps. Steps 1-3 are
+mechanical and either pass or fail; steps 4-8 are read-throughs that produce findings; step 9 is
+the write-up. **Work through them in order** — a later step is worthless over code an earlier step
+has not verified still builds.
 
-1. Review all files for security vulnerabilities (injection, path traversal, unsafe deserialization, OWASP top 10)
-2. Review for efficiency issues (N+1 queries, unnecessary allocations, redundant I/O, blocking async calls)
-3. Check for race conditions in event handlers and concurrent operations
-4. Verify all file system operations have proper safety checks
-5. Review API endpoints for authorization and input validation gaps
-6. Sweep every tracked file for personally identifying information — see [PII & Documentation Sweep](#pii--documentation-sweep) below
-7. Sweep the scratchpad and every other temporary working directory — see [Scratchpad & Temporary File Sweep](#scratchpad--temporary-file-sweep) below
+Record every step's outcome in [`AUDIT.md`](AUDIT.md), **including the steps that came back clean**.
+Check [`AUDIT.md`](AUDIT.md#known-acceptable-matches-do-not-re-flag) before flagging anything: it
+lists the matches already settled as acceptable, and re-litigating them wastes a review cycle.
 
-**Do not commit code or cut a release until all findings have been presented to the user for review.** Present each issue with its location, severity, and proposed resolution. Only proceed after the user approves.
+### Step 1 — Build
 
-Previous audit results are recorded in [`AUDIT.md`](AUDIT.md) alongside this file. Reference it to avoid re-flagging known false positives and to track the history of accepted risks.
+```powershell
+dotnet build -c Release
+```
 
-**Always update `AUDIT.md` with results immediately after completing an audit — do not ask for confirmation first.**
+Zero errors **and zero warnings**. A warning is a finding; do not carry one into a release.
 
-After completing an audit, also check whether `README.md` needs updating to reflect any new features, changed defaults, renamed tasks, or new configuration options added since the last release.
+### Step 2 — Harnesses
+
+```powershell
+dotnet run -c Release --project agentic/tools/audit-harness
+cd agentic/tools/webclient-harness ; npm test
+```
+
+Every check must pass. If one fails, decide whether the code or the harness is wrong before changing
+either — a harness that measures the wrong thing is itself a finding, and has been more than once.
+Re-run `node measure.js` when `Web/specialtomovie.js` changed, and record the per-render cost.
+
+### Step 3 — Comment lint
+
+```powershell
+node agentic/tools/check-comments.mjs .
+```
+
+Must print `clean`. **Everything outside `agentic/` is in scope** — `agentic/` is the only exempt
+directory, since those files are working notes rather than shipped code.
+
+The rule the linter enforces is that a comment is a short note making the next line readable: at most
+two adjacent lines, 100 characters a line, 180 across a run, two sentences, no rationale connectives
+("because", "rather than", "so that"), no narration of history, no `///` XML docs, no `/* */` blocks,
+no commented-out code. Prefix a line with `!` to mark a trap without exempting it from the limits.
+
+Anything longer is documentation and belongs in [`ARCHITECTURE.md`](ARCHITECTURE.md), under the
+matching section, with the comment reduced to a short note naming it. **Move the reasoning, do not
+delete it** — the rationale is the expensive part, and most of it was paid for with a bug.
+
+Run it with no arguments to lint only what this branch changed, or `COMMENT_LINT_BASE=HEAD` for
+uncommitted work alone. The whole-tree form above is what the release gate uses.
+
+### Step 4 — Security review
+
+Read for injection, path traversal, unsafe deserialization, and the rest of the OWASP top 10. The
+recurring shapes in this codebase: a value from library metadata reaching a URL path segment, a
+request-derived string reaching an HTML attribute, and a composed filesystem path escaping its
+library root.
+
+### Step 5 — Efficiency review
+
+N+1 queries, per-item work that belongs outside the loop, unnecessary allocations, redundant I/O,
+blocking calls on async paths. A full scan's cost must not grow as episodes multiplied by movies.
+
+### Step 6 — Concurrency review
+
+Race conditions in event handlers and concurrent operations: config collections mutated during a
+scan, reentrancy through Jellyfin's own event dispatch, and lock discipline in `PairStore`.
+
+### Step 7 — Filesystem and API review
+
+Every filesystem operation has its safety check (containment, sanitisation, atomic write). Every API
+endpoint has its authorization attribute and validates its input. Note deliberately anonymous routes
+and confirm each still reflects nothing from the request.
+
+### Step 8 — Sweeps
+
+Two, both mandatory, both recorded even when clean:
+
+- **PII sweep** over every tracked file — see [PII & Documentation Sweep](#pii--documentation-sweep).
+- **Scratchpad sweep** over every temporary working directory — see
+  [Scratchpad & Temporary File Sweep](#scratchpad--temporary-file-sweep).
+
+### Step 9 — Write-up
+
+1. **Update [`AUDIT.md`](AUDIT.md) immediately, without asking for confirmation first.** One entry
+   per audit: what ran, what each step found, and how each finding was resolved.
+2. Update [`HANDOFF.md`](HANDOFF.md) and [`ARCHITECTURE.md`](ARCHITECTURE.md) for anything that
+   moved, and [`tools/README.md`](tools/README.md) if a tool was added, changed or removed.
+3. Check whether `README.md` needs updating — new features, changed defaults, renamed tasks, new
+   config options. Do not edit it otherwise.
+4. **Present every finding to the user before committing anything.** Location, severity, proposed
+   resolution. No commit and no release until they have approved.
 
 ### PII & Documentation Sweep
 
-Step 6 covers **every tracked file**, not only the prose docs. The repository is public and its
-history is permanent, so a personal detail that reaches `master` cannot be withdrawn. In scope:
+Part of step 8. It covers **every tracked file**, not only the prose docs. The repository is public
+and its history is permanent, so a personal detail that reaches `master` cannot be withdrawn. In
+scope:
 
 - source **comments** — `///` XML docs, `//` notes, and commented-out code
 - everything under `agentic/`, including `agentic/memory/`
@@ -134,7 +209,8 @@ generic description ("if the working copy is on a network share...").
 Scope the sweep to tracked files so build output and ignored local files are excluded:
 
 ```powershell
-$files = git ls-files
+# Test-Path drops files staged for deletion, which Select-String would otherwise error on.
+$files = git ls-files | Where-Object { Test-Path $_ }
 
 # 1. Drive-rooted paths, UNC paths, home directories
 Select-String -Path $files -Pattern '(^|[^A-Za-z0-9_])[A-Za-z]:[\\/]', '\\\\[A-Za-z0-9]', '/home/', '/Users/', 'USERPROFILE', '/Volumes/', '/mnt/'
@@ -157,6 +233,10 @@ Checks 1-4 are mechanical. Check 5 is a read-through: a personal detail phrased 
 I keep recordings on") matches no pattern. Sweep the working tree's uncommitted edits too, since this
 runs before the release commit exists.
 
+Check 5 is short enough to read in full now that step 3 caps comment length; scope it to published
+source (`$files | Where-Object { $_ -notlike 'agentic/*' }`) when the full listing is unwieldy, then
+read `agentic/` separately.
+
 Known-acceptable matches are listed in [`AUDIT.md`](AUDIT.md#known-acceptable-matches-do-not-re-flag)
 — check them before flagging anything, and add to that list when a new one is settled.
 
@@ -165,7 +245,7 @@ what it covered, and every finding with its resolution.
 
 ### Scratchpad & Temporary File Sweep
 
-Step 7 covers the agent's scratchpad directory and anywhere else working files were parked during
+Also part of step 8. It covers the agent's scratchpad directory and anywhere else working files were parked during
 the release cycle — a system temp folder, a throwaway probe project, a cloned reference repository,
 a copy of `agentic/` taken "just in case". None of it is tracked, so the PII sweep above never sees
 it, and it survives the session that created it.

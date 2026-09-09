@@ -43,11 +43,8 @@ public class PairStore : IPairStore
     private readonly ILogger<PairStore> _logger;
     private List<LinkedPair> _pairs;
 
-    // Lookup indexes over _pairs. Rebuilt wholesale after every mutation rather than maintained
-    // incrementally: callers mutate the LinkedPair they were handed and then call Upsert, so by
-    // then the pair's previous EpisodeItemId/MovieItemId are already gone and cannot be evicted
-    // by key. Every mutation already pays an O(n) serialise plus disk I/O in Save(), so an O(n)
-    // rebuild costs nothing measurable and removes a whole class of stale-key bugs.
+    // Lookup indexes over _pairs, rebuilt wholesale on every mutation.
+    // See agentic/ARCHITECTURE.md, "Persistence".
     private Dictionary<Guid, LinkedPair> _byEpisodeId = new();
     private Dictionary<Guid, LinkedPair> _byMovieId = new();
     private Dictionary<string, LinkedPair> _byHardLinkPath = new(StringComparer.OrdinalIgnoreCase);
@@ -82,11 +79,7 @@ public class PairStore : IPairStore
         RebuildIndexes();
     }
 
-    /// <summary>
-    /// Rebuilds every lookup index from <see cref="_pairs"/>. Callers must hold <see cref="_lock"/>.
-    /// First entry wins on a duplicate key, matching the <c>List.Find</c> semantics these indexes
-    /// replaced.
-    /// </summary>
+    // ! Callers must hold _lock. First entry wins on a duplicate key.
     private void RebuildIndexes()
     {
         _byEpisodeId = new Dictionary<Guid, LinkedPair>(_pairs.Count);
@@ -207,8 +200,8 @@ public class PairStore : IPairStore
                         pair.CreatedUtc = DateTime.UtcNow;
                     }
 
-                    // Keep the position map usable for the rest of the batch; a pair appearing
-                    // twice in one call must update in place rather than being appended twice.
+                    // ! Keeps the map usable for the rest of the batch: a pair named
+                    // twice in one call updates in place.
                     _positionById[pair.Id] = _pairs.Count;
                     _pairs.Add(pair);
                 }
@@ -277,9 +270,8 @@ public class PairStore : IPairStore
         }
         catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
         {
-            // Not only malformed JSON: the file can also be locked, truncated or unreadable. This
-            // runs from the constructor, so letting any of those escape fails the DI registration
-            // and takes the whole plugin down rather than degrading to the backup.
+            // ! Runs from the constructor: an escaping failure takes the whole plugin down.
+            // Locked, truncated and unreadable all land here, not only malformed JSON.
             _logger.LogError(ex, "Failed to read pair store, attempting backup restore");
             return LoadBackup();
         }
@@ -311,22 +303,8 @@ public class PairStore : IPairStore
         }
     }
 
-    /// <summary>
-    /// Persists the store. Never throws: a write failure is logged and the in-memory state is kept.
-    /// </summary>
-    /// <remarks>
-    /// Every mutation calls this, and the mutation has already been applied to <see cref="_pairs"/>
-    /// by the time it runs. Letting an I/O error escape would therefore be the worst of both
-    /// worlds: the caller sees a failure for a change that did take effect in memory, and the
-    /// exception unwinds into whatever invoked the mutation — including Jellyfin's own
-    /// <c>ItemRemoved</c> dispatch, where it would disrupt unrelated subscribers.
-    /// <para>
-    /// Swallowing it means the store can be newer in memory than on disk until the next successful
-    /// save. That is the lesser evil for a transient failure (a locked file, a full disk, a
-    /// momentarily unavailable network share) because the next mutation rewrites the whole file
-    /// and so repairs the divergence on its own.
-    /// </para>
-    /// </remarks>
+    // ! Never throws: a write failure is logged and the in-memory state kept.
+    // See agentic/ARCHITECTURE.md, "Persistence".
     private void Save()
     {
         try

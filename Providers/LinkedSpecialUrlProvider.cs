@@ -8,12 +8,8 @@ using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.SpecialToMovie.Providers;
 
-/// <summary>
-/// Adds a link to the paired special on a linked movie's detail page.
-/// </summary>
-/// <remarks>
-/// The mirror of <see cref="LinkedMovieUrlProvider"/>; the same construction and failure rules apply.
-/// </remarks>
+// Puts a link to the paired special on a linked movie's detail page.
+// Mirror of LinkedMovieUrlProvider; same construction and failure rules.
 public class LinkedSpecialUrlProvider : IExternalUrlProvider
 {
     private readonly IPairStore _pairStore;
@@ -21,13 +17,6 @@ public class LinkedSpecialUrlProvider : IExternalUrlProvider
     private readonly CrossLinkUrlResolver _urlResolver;
     private readonly ILogger<LinkedSpecialUrlProvider> _logger;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="LinkedSpecialUrlProvider"/> class.
-    /// </summary>
-    /// <param name="pairStore">The pair store.</param>
-    /// <param name="libraryManager">The library manager.</param>
-    /// <param name="urlResolver">The cross-link URL resolver.</param>
-    /// <param name="logger">The logger.</param>
     public LinkedSpecialUrlProvider(
         IPairStore pairStore,
         ILibraryManager libraryManager,
@@ -40,10 +29,8 @@ public class LinkedSpecialUrlProvider : IExternalUrlProvider
         _logger = logger;
     }
 
-    /// <inheritdoc />
     public string Name => "TV Special";
 
-    /// <inheritdoc />
     public IEnumerable<string> GetExternalUrls(BaseItem item)
     {
         try

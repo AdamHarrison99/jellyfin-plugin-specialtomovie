@@ -51,10 +51,8 @@ public class WatchSyncService : IHostedService, IDisposable
         _userDataManager.UserDataSaved -= OnUserDataSaved;
     }
 
-    /// <summary>
-    /// Performs an initial one-time sync of watch state for all users when a pair first becomes Active.
-    /// Copies the "most watched" state — if either item is played, both become played.
-    /// </summary>
+    // One-time sync across all users when a pair first becomes Active.
+    // See agentic/ARCHITECTURE.md, "Watch sync", for the priority rules.
     public void SyncInitialWatchState(LinkedPair pair)
     {
         var config = Plugin.Instance?.Configuration;

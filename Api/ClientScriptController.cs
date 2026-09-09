@@ -7,14 +7,8 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Jellyfin.Plugin.SpecialToMovie.Api;
 
-/// <summary>
-/// Serves the detail-page client script.
-/// </summary>
-/// <remarks>
-/// This is the plugin's only anonymous route. The browser requests it as part of loading the web
-/// app, before anyone has signed in, so it cannot require authentication. It returns a fixed
-/// embedded asset and reflects nothing from the request.
-/// </remarks>
+// ! The plugin's only anonymous route: the browser fetches it before anyone signs in.
+// It serves a fixed embedded asset and reflects nothing from the request.
 [ApiController]
 [Route("SpecialToMovie")]
 [AllowAnonymous]
@@ -25,8 +19,7 @@ public class ClientScriptController : ControllerBase
     private static readonly string EntityTag =
         $"\"{typeof(ClientScriptController).Assembly.GetName().Version?.ToString() ?? "0"}\"";
 
-    // The asset is embedded in the assembly and cannot change while the process is running, so it
-    // is read once rather than on every page load of the web app.
+    // An embedded asset cannot change while the process runs; read it once.
     private static readonly Lazy<string?> Script = new(() =>
     {
         using var stream = typeof(ClientScriptController).Assembly.GetManifestResourceStream(ResourceName);
@@ -39,10 +32,6 @@ public class ClientScriptController : ControllerBase
         return reader.ReadToEnd();
     });
 
-    /// <summary>
-    /// Gets the client script.
-    /// </summary>
-    /// <returns>The script, 304 if the caller already has it, or 404 if it is not embedded.</returns>
     [HttpGet("ClientScript")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status304NotModified)]
@@ -55,14 +44,11 @@ public class ClientScriptController : ControllerBase
             return NotFound();
         }
 
-        // Version-stamped, so upgrading the plugin invalidates any cached copy. Paired with
-        // no-cache, which asks the browser to revalidate rather than to stop caching: the common
-        // case then costs a conditional request instead of the whole body on every page load.
+        // Version-stamped: a plugin upgrade invalidates any cached copy.
         Response.Headers.ETag = EntityTag;
         Response.Headers.CacheControl = "no-cache";
 
-        // MVC does not act on an ETag by itself, so the 304 has to be returned here or the header
-        // is decorative and every request still carries the full script.
+        // ! MVC does not act on an ETag by itself; without this the header is decorative.
         if (Request.Headers.IfNoneMatch.Contains(EntityTag))
         {
             return StatusCode(StatusCodes.Status304NotModified);

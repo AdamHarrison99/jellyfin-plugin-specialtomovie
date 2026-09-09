@@ -1,20 +1,21 @@
 # webclient-harness
 
 DOM harness for [`Web/specialtomovie.js`](../../../Web/specialtomovie.js), the detail-page client
-script that turns the plugin's cross-links into badges and keeps clicks inside the app.
+script that renders the plugin's cross-links as icon buttons and keeps clicks inside the app.
 
 ## Why this exists
 
 The script is progressive enhancement layered over a row of links the server renders, so nearly
 everything that can go wrong with it is a DOM question rather than a logic one:
 
-- does it recognise that the row is rendered as brand badges rather than text?
-- does it stay legible against whatever theme is actually in use?
+- does it render as an icon at all, and does the caption survive as the accessible name?
+- is the copy on a hidden detail page left exactly as the server rendered it?
 - does it end up last in the row, and stay there when another plugin appends after it?
 - does a click stay inside the app, including the first click after a re-render?
+- is the icon the size, spacing and vertical position the rest of the row uses?
 
 None of that is answerable by reading the file, and every one of those has been wrong at least once
-in a shipped release. The bugs behind checks 1, 2 and 4 all reached users.
+in a shipped release.
 
 ## Running it
 
@@ -27,11 +28,11 @@ That runs both halves:
 
 | Script | Engine | Covers |
 | --- | --- | --- |
-| `node test.js` | jsdom | behaviour - 40 checks |
-| `node test-layout.js` | real browser | measurement and alignment - 18 checks |
+| `node test.js` | jsdom | behaviour - 46 checks |
+| `node test-layout.js` | real browser | measurement and alignment - 52 checks |
 
 `node measure.js` is a diagnostic rather than a test: it counts the style resolutions and forced
-layouts one upgrade pass causes, for a text row and a badge row. There is no pass or fail - compare
+layouts one upgrade pass causes, for a text row and a logo row. There is no pass or fail - compare
 two revisions by pointing it at each in turn. It found the two efficiency faults fixed after v1.0.18,
 neither of which was apparent from reading the code.
 
@@ -50,40 +51,37 @@ of the usual paths.
 once before the first run; `package.json` and `package-lock.json` pin the exact tree, so the install
 is reproducible.
 
-jsdom does not implement `getComputedStyle` for pseudo-elements and prints a `Not implemented`
-notice when the script probes `::before` / `::after` for a background image. That path is guarded and
-falls through correctly; the notices are noise, not failures. Filter them with
-`node test.js 2>&1 | grep -v "Not implemented"`.
-
-## What it covers
+## What `test.js` covers
 
 | # | Check |
 | --- | --- |
-| 1 | A row of brand badges is recognised, and the link renders as a badge with its caption kept as the accessible name |
-| 2, 3 | The text form picks its colour from the real backdrop — light on dark, dark on light |
+| 1, 2 | The outcome is identical on a text row and on a row of logos — the script no longer tries to work out which kind of row it is in, which is what removed a whole class of bug |
+| 3 | Copies on hidden detail pages are left unstyled, and styling is stripped from one that becomes hidden |
 | 4 | A click on a freshly re-rendered, not-yet-upgraded anchor still stays in the app |
 | 5 | Ctrl-click still opens a new tab, because that is the user's choice to make |
 | 6 | The link returns to the end of the row after another plugin appends to it |
 | 7 | The move budget is released once the row settles, so ordinary re-appends cannot exhaust it |
 | 8 | Links belonging to other plugins are neither upgraded nor swallowed by the click handler |
 | 9 | Loading the script a second time is inert |
-| 10 | The badge row is found and joined even when it is a **different container** from the one the cross-link was rendered into |
-| 11 | Size and alignment are copied from a neighbouring badge rather than hard-coded |
+| 10 | A separator is put back when the link is moved to the end |
+| 11 | **No geometry is written to the anchor** — the regression guard for three releases of bugs caused by doing exactly that |
 
-## Limits
+## What `test-layout.js` covers
 
-jsdom computes style but does not lay out, so `getBoundingClientRect` returns zeroes there. Two
-parts of the script depend on measurement and are therefore invisible to `test.js`:
+jsdom computes style but does not lay out, so `getBoundingClientRect` returns zeroes there and the
+two measuring parts of the script are invisible to `test.js`: `iconSize`, which takes the icon's box
+from a link the web client rendered, and `matchRow`, which matches the row's own spacing and vertical
+centre. This half drives a real engine for those.
 
-- the shape-based fallback in `captionSuppressed`, which recognises a badge whose caption is hidden on
-  a child element rather than on the anchor
-- the height and width copy in `matchBadgeMetrics`
+Four scenarios: logos at 25px, logos at 36px (a fixed 25px box passes the first and fails this one,
+which is the whole reason the size is measured), a link starting mid-row so the move path runs, and a
+plain text row with no logo CSS at all.
 
-`test-layout.js` exists for exactly those two and checks them in a real engine, against rows of 32px
-and 24px logos so that a hard-coded size cannot pass. It is a true regression test: run it against
-the script as shipped in v1.0.18 and **16 of its 18 checks fail**, reproducing the reported symptom
-directly - the cross-link measures 88x16, the shape of a text link, instead of a square tile matching
-the row.
+**Vertical position is measured by hit-testing the painted pixels**, not by reading a rect. Neither
+kind of link in this row can be measured from its own box: a link showing a logo is an inline anchor
+with `font-size: 0`, so its rect collapses to zero height on the baseline, and the icon's vertical
+correction is a relative offset on the `::before`, which moves paint without moving layout. Reading
+the rect reported the icon 4.5px out on a text row when it was in fact half a pixel out.
 
 What remains unverified anywhere is visual appearance: that the artwork reads clearly at the row's
 size, and that its colour sits well beside real brand logos. No harness answers that.

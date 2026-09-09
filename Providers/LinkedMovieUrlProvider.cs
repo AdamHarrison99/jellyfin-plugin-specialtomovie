@@ -8,15 +8,8 @@ using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.SpecialToMovie.Providers;
 
-/// <summary>
-/// Adds a link to the paired movie on a linked special's detail page.
-/// </summary>
-/// <remarks>
-/// Jellyfin discovers this class itself and constructs it from the root service provider, so it
-/// must not be registered in PluginServiceRegistrator. A throw from the constructor would fail the
-/// whole plugin, and a throw from Name or GetExternalUrls would break the item detail response, so
-/// both are written to degrade rather than throw.
-/// </remarks>
+// Puts a link to the paired movie on a linked special's detail page.
+// See agentic/ARCHITECTURE.md, "Cross-link buttons": part-discovered, must degrade not throw.
 public class LinkedMovieUrlProvider : IExternalUrlProvider
 {
     private readonly IPairStore _pairStore;
@@ -24,13 +17,6 @@ public class LinkedMovieUrlProvider : IExternalUrlProvider
     private readonly CrossLinkUrlResolver _urlResolver;
     private readonly ILogger<LinkedMovieUrlProvider> _logger;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="LinkedMovieUrlProvider"/> class.
-    /// </summary>
-    /// <param name="pairStore">The pair store.</param>
-    /// <param name="libraryManager">The library manager.</param>
-    /// <param name="urlResolver">The cross-link URL resolver.</param>
-    /// <param name="logger">The logger.</param>
     public LinkedMovieUrlProvider(
         IPairStore pairStore,
         ILibraryManager libraryManager,
@@ -43,14 +29,9 @@ public class LinkedMovieUrlProvider : IExternalUrlProvider
         _logger = logger;
     }
 
-    /// <inheritdoc />
-    /// <remarks>
-    /// A constant. Jellyfin reads this at startup to sort the providers as well as per request, and
-    /// it is the one part of the link the web client escapes before rendering.
-    /// </remarks>
+    // Read at startup to sort providers, and the one part of the link the web client escapes.
     public string Name => "Movie Version";
 
-    /// <inheritdoc />
     public IEnumerable<string> GetExternalUrls(BaseItem item)
     {
         try
@@ -59,19 +40,13 @@ public class LinkedMovieUrlProvider : IExternalUrlProvider
         }
         catch (Exception ex)
         {
-            // This runs inside the item detail DTO pipeline; a throw here would break the whole
-            // response for the item.
+            // ! Inside the item detail DTO pipeline: a throw here breaks the item's response.
             _logger.LogWarning(ex, "Cross-link lookup failed for item {ItemId}", item?.Id);
             return Array.Empty<string>();
         }
     }
 
-    /// <summary>
-    /// Returns a materialised result rather than an iterator: the caller enumerates the sequence
-    /// after GetExternalUrls has returned, which would leave a try/catch in an iterator useless.
-    /// </summary>
-    /// <param name="item">The item being rendered.</param>
-    /// <returns>Zero or one URL.</returns>
+    // ! Materialised, never an iterator. The caller enumerates after GetExternalUrls returns.
     private string[] Build(BaseItem item)
     {
         if (item is not Episode)
@@ -94,7 +69,7 @@ public class LinkedMovieUrlProvider : IExternalUrlProvider
             return Array.Empty<string>();
         }
 
-        // A movie deleted outside the plugin would otherwise render a dead button.
+        // A movie deleted outside the plugin leaves a dead button behind.
         if (_libraryManager.GetItemById(pair.MovieItemId.Value) == null)
         {
             return Array.Empty<string>();

@@ -47,9 +47,6 @@ public record LinkedSubtitle
 
     public string MovieSidePath { get; set; } = string.Empty;
 
-    /// <summary>
-    /// SHA-256 of the subtitle content captured when the link was created.
-    /// Used to confirm a surviving file is still the plugin-linked file before deleting it.
-    /// </summary>
+    // SHA-256 of the subtitle content at link time; see agentic/ARCHITECTURE.md.
     public string? ContentHash { get; set; }
 }

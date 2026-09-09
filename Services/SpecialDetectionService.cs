@@ -541,19 +541,8 @@ public class SpecialDetectionService
         return $"{seriesName} S00E{episodeNumber}";
     }
 
-    /// <summary>
-    /// Decides whether an episode is covered by the ignore list.
-    /// </summary>
-    /// <remarks>
-    /// An entry matches an episode by its key ("Series Name S00E01") or its Jellyfin item ID, and
-    /// matches every episode of a series by the series name or the series' Jellyfin item ID. All
-    /// four forms share one list, which is unambiguous because an episode key always carries the
-    /// S00E suffix and IDs are GUIDs.
-    /// </remarks>
-    /// <param name="ignoreList">The configured ignore list.</param>
-    /// <param name="episode">The episode being considered.</param>
-    /// <param name="episodeKey">The episode's formatted key.</param>
-    /// <returns>True if the episode should be skipped.</returns>
+    // One list carrying four entry forms: episode key, episode ID, series name, series ID.
+    // See agentic/ARCHITECTURE.md, "Detection and pairing".
     private static bool IsIgnored(List<string> ignoreList, Episode episode, string episodeKey)
     {
         if (ignoreList.Count == 0)
@@ -697,9 +686,8 @@ public class SpecialDetectionService
             _logger.LogInformation("Removed pair for ignored episode {Key} (pair {PairId})", episodeKey, pair.Id);
         }
 
-        // Drop the pairs before deleting the movies. Jellyfin raises ItemRemoved for each deleted
-        // movie, and the handler treats a still-present pair as a user-initiated removal, which
-        // would cascade into the original episode whenever two-way deletion is enabled.
+        // ! Pairs first, then the movies. See agentic/ARCHITECTURE.md,
+        // "Deletion and the ItemRemoved cascade".
         if (toRemove.Count > 0)
         {
             _pairStore.RemoveMany(toRemove);
@@ -747,9 +735,8 @@ public class SpecialDetectionService
             Recursive = true
         });
 
-        // Index the episodes once by both forms a force link may name them by. Matching by scanning
-        // the list per force link meant re-formatting every episode's key for every entry, so the
-        // work grew with force links multiplied by Season 0 episodes.
+        // Indexed once by both forms a force link may name them by; a scan per entry
+        // grew as force links multiplied by Season 0 episodes.
         var episodesById = new Dictionary<Guid, Episode>();
         var episodesByKey = new Dictionary<string, Episode>(StringComparer.OrdinalIgnoreCase);
 
@@ -800,19 +787,8 @@ public class SpecialDetectionService
     }
 
 
-    /// <summary>
-    /// The server's movies, indexed by destination library.
-    /// </summary>
-    /// <remarks>
-    /// Narrowing every movie on the server down to one destination library means a path prefix test
-    /// per movie per library location. That answer is the same for every episode mapped to that
-    /// library, so computing it inside the per-episode lookup made a full scan's cost grow as
-    /// episodes multiplied by movies. Each destination is filtered once here and reused.
-    /// <para>
-    /// An instance is built per scan and used only by that scan, so it needs no synchronisation of
-    /// its own.
-    /// </para>
-    /// </remarks>
+    // The server's movies, filtered per destination library once and reused.
+    // Built per scan, used by that scan alone, and needs no synchronisation.
     private sealed class MovieIndex
     {
         private readonly IReadOnlyList<BaseItem> _allMovies;
@@ -848,9 +824,7 @@ public class SpecialDetectionService
         }
     }
 
-    /// <summary>
-    /// Immutable snapshot of mutable config collections, taken once at scan start.
-    /// </summary>
+    // Immutable snapshot of the mutable config collections, taken at scan start.
     private sealed class ConfigSnapshot
     {
         public required List<LibraryMapping> LibraryMappings { get; init; }

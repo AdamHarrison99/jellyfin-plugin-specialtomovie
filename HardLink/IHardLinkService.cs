@@ -21,12 +21,8 @@ public interface IHardLinkService
     SubtitleSyncResult SyncSubtitles(string episodePath, string hardLinkPath, string movieTitle, int? year, List<LinkedSubtitle> existing);
 }
 
-/// <summary>
-/// Outcome of a bidirectional subtitle sync. <see cref="Records"/> are the tracked links that
-/// still exist (plus any newly created). <see cref="Deletions"/> are links where the user removed
-/// one side and the surviving file was confirmed (by content hash) to still be the linked copy —
-/// the caller deletes these via Jellyfin's subtitle API.
-/// </summary>
+// Outcome of a bidirectional subtitle sync.
+// See agentic/ARCHITECTURE.md, "Hard links and subtitles".
 public class SubtitleSyncResult
 {
     public List<LinkedSubtitle> Records { get; set; } = new();

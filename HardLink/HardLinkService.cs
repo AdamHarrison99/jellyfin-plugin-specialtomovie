@@ -114,12 +114,8 @@ public partial class HardLinkService : IHardLinkService
 
         var candidate = Path.Combine(destinationLibraryPath, folderName, fileName);
 
-        // Verify the resolved path is still under the destination library root. The root is given a
-        // trailing separator first: a bare prefix test also accepts a sibling directory whose name
-        // merely starts with the root's ("/media/movies-old" against a root of "/media/movies").
-        // Nothing reaching here is attacker-controlled today — the components are sanitized titles
-        // and the root comes from Jellyfin's library config — but this is the backstop that is
-        // supposed to hold if that ever stops being true.
+        // ! Containment backstop; see agentic/ARCHITECTURE.md, "Hard links and subtitles".
+        // The trailing separator stops a sibling root prefix from passing.
         var resolvedPath = Path.GetFullPath(candidate);
         var resolvedRoot = Path.GetFullPath(destinationLibraryPath);
         var rootWithSeparator = resolvedRoot.EndsWith(Path.DirectorySeparatorChar)
@@ -492,9 +488,7 @@ public partial class HardLinkService : IHardLinkService
     [LibraryImport("libc", EntryPoint = "link", SetLastError = true, StringMarshalling = StringMarshalling.Utf8)]
     private static partial int LinkPosix(string oldpath, string newpath);
 
-    // stat() for filesystem device comparison on Linux/macOS
-    // Using __xstat with ver=1 on glibc, or stat directly — we use the libc "stat" wrapper.
-    // The struct layout varies by platform; we only need st_dev which is the first field.
+    // ! Layout varies by platform, and only st_dev - the first field - is read.
     [LibraryImport("libc", EntryPoint = "stat", SetLastError = true, StringMarshalling = StringMarshalling.Utf8)]
     private static partial int StatPosix(string path, ref StatBuf buf);
 

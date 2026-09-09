@@ -6,18 +6,8 @@ using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.SpecialToMovie.Services;
 
-/// <summary>
-/// Injects the plugin's client script tag into the web app's index.html as it is served.
-/// </summary>
-/// <remarks>
-/// Jellyfin offers plugins no hook for adding a script to the web client, and writing into the web
-/// folder on disk needs a writable install and is undone by every jellyfin-web update. Rewriting the
-/// response instead keeps the change self-contained.
-///
-/// The filter is deliberately additive and fails open: any unexpected condition results in the
-/// original response being served untouched. It is enabled by default, so that property is what
-/// makes it safe — every early return below is a case where the response is passed through.
-/// </remarks>
+// Adds the client script tag to the web app's index.html as it is served.
+// ! Additive and fails open; every early return here passes the response through untouched.
 public class ScriptInjectionStartupFilter : IStartupFilter
 {
     private const string ScriptPath = "/SpecialToMovie/ClientScript";
@@ -25,22 +15,17 @@ public class ScriptInjectionStartupFilter : IStartupFilter
     private readonly ILogger<ScriptInjectionStartupFilter> _logger;
     private int _loggedOnce;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="ScriptInjectionStartupFilter"/> class.
-    /// </summary>
-    /// <param name="logger">The logger.</param>
     public ScriptInjectionStartupFilter(ILogger<ScriptInjectionStartupFilter> logger)
     {
         _logger = logger;
     }
 
-    /// <inheritdoc />
     public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next)
     {
         return app =>
         {
-            // Registered ahead of the rest of the pipeline so this runs outermost; stripping
-            // Accept-Encoding below then reliably yields a response body we can read.
+            // ! Registered ahead of the pipeline to run outermost, which is what makes
+            // the Accept-Encoding strip below yield a readable body.
             app.Use(InvokeAsync);
             next(app);
         };
@@ -53,31 +38,14 @@ public class ScriptInjectionStartupFilter : IStartupFilter
             return false;
         }
 
-        // EndsWith rather than equality so this stays correct when the server is hosted under a
-        // base-URL prefix.
+        // A suffix match, not equality: a base-URL install still carries its prefix here.
         return path.EndsWith("/web/index.html", StringComparison.OrdinalIgnoreCase) ||
                path.EndsWith("/web/", StringComparison.OrdinalIgnoreCase) ||
                path.Equals("/web", StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>
-    /// Returns the base-URL prefix the web app is being served under, or an empty string.
-    /// </summary>
-    /// <remarks>
-    /// This middleware is registered outermost, ahead of the <c>Map</c> the server wraps its whole
-    /// pipeline in, so a base-URL install still carries its prefix on
-    /// <see cref="HttpRequest.Path"/> and <see cref="HttpRequest.PathBase"/> is empty — which is why
-    /// <see cref="IsIndexRequest"/> matches on a suffix. The script tag has to carry the same
-    /// prefix: a root-relative <c>src</c> would send the browser to a path the server does not
-    /// serve, and the enhancement would silently never load.
-    /// <para>
-    /// The value comes off the request line and is written into an HTML attribute, so anything that
-    /// is not a plain path is discarded rather than escaped. Without that check a request whose
-    /// path merely ends in <c>/web/index.html</c> could reflect markup into the served page.
-    /// </para>
-    /// </remarks>
-    /// <param name="path">The matched request path.</param>
-    /// <returns>A prefix starting with '/', or an empty string.</returns>
+    // ! The result comes off the request line and lands in an HTML attribute, so anything
+    // that is not a plain path is discarded. See agentic/ARCHITECTURE.md.
     private static string GetBasePrefix(string path)
     {
         var webIndex = path.LastIndexOf("/web", StringComparison.OrdinalIgnoreCase);
@@ -194,17 +162,13 @@ public class ScriptInjectionStartupFilter : IStartupFilter
         context.Response.ContentType = "text/html;charset=utf-8";
         context.Response.ContentLength = bytes.Length;
 
-        // The body no longer matches the static file, so its validators must not be reused, and
-        // range requests are not supported on the rewritten document.
+        // The rewritten body invalidates the static file's validators, and it has no ranges.
         context.Response.Headers.Remove("ETag");
         context.Response.Headers.Remove("Last-Modified");
         context.Response.Headers.Remove("Accept-Ranges");
 
-        // Removing the validators above leaves the browser with nothing to revalidate against, so
-        // without this it is free to keep serving a heuristically cached copy - including one
-        // fetched before the plugin was installed, which has no script tag in it and so silently
-        // disables the enhancement until the user hard-reloads. Revalidating a document this small
-        // costs little; serving a stale one costs the whole feature.
+        // ! With the validators gone, a heuristically cached copy predating the install
+        // would keep the tag out of the page. See agentic/ARCHITECTURE.md.
         context.Response.Headers.CacheControl = "no-cache, must-revalidate";
 
         await originalBody.WriteAsync(bytes).ConfigureAwait(false);

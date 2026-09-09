@@ -181,15 +181,11 @@ public class SpecialToMovieController : ControllerBase
             return NotFound(new { Message = "Pair not found" });
         }
 
-        // Remove the pair before deleting anything: Jellyfin raises ItemRemoved for the movie, and
-        // if the pair were still in the store the handler would treat it as a user-initiated
-        // removal and cascade into the original episode whenever two-way deletion is enabled.
+        // ! Pair first, then media. See agentic/ARCHITECTURE.md, "Deletion and the ItemRemoved cascade".
         _pairStore.Remove(pair.Id);
 
-        // Two guards the request cannot talk its way past. A pre-existing movie belongs to the
-        // user's library, not to this plugin. And deletion is gated on the *saved* setting, not on
-        // the caller's word for it: the config page tracks the checkbox live, so an unsaved tick
-        // would otherwise delete files the stored configuration says to keep.
+        // ! Two guards the request cannot talk its way past: a pre-existing movie is never
+        // deleted, and the *saved* setting decides, not the caller's word for it.
         var deletedMedia = false;
         if (request.DeleteMedia && !pair.IsExistingMovie &&
             Plugin.Instance?.Configuration.AutoDeleteOnRemoval == true)
@@ -303,10 +299,7 @@ public class SpecialToMovieController : ControllerBase
     {
         public Guid PairId { get; set; }
 
-        /// <summary>
-        /// Gets or sets a value indicating whether the plugin-managed movie item and its files
-        /// should be deleted along with the pair. Ignored for pre-existing movies.
-        /// </summary>
+        // Ignored for a pre-existing movie, which belongs to the user's own library.
         public bool DeleteMedia { get; set; }
     }
 

@@ -38,6 +38,144 @@ technical, none personal. The only matches returned were the known-acceptable on
 ---
 ---
 
+## Audit: 2026-09-09 (Session 20 — Cross-link icon rebuild, comment lint adopted, post-v1.0.19)
+
+**Scope**: the full nine-step audit over the whole tree. `Web/specialtomovie.js` was rewritten
+(639 -> 460 lines) around the row's own icon idiom, the `webclient-harness` was rewritten to match,
+and a comment lint was adopted as a standing release gate — which rewrote the comments in 19 source
+files and moved their rationale into the new [`ARCHITECTURE.md`](ARCHITECTURE.md).
+
+**Releases 1.0.18.0 and 1.0.19.0 were withdrawn** from GitHub and from `manifest.json` before this
+audit; both shipped a visibly broken external-links row. The newest manifest entry is 1.0.17.0, so
+the next release is **1.0.20.0** — not a re-cut 1.0.19.0, which anyone who already installed it would
+never be offered as an update. `.csproj` and `build.yaml` still read `1.0.19.0` and need the bump.
+
+### Step 1 — Build
+
+`dotnet build -c Release`: **succeeded, 0 warnings, 0 errors.**
+
+### Step 2 — Harnesses
+
+| Harness | Result |
+| --- | --- |
+| `audit-harness` | 21/21 passed |
+| `webclient-harness/test.js` (jsdom) | 46/46 passed |
+| `webclient-harness/test-layout.js` (Edge) | 52/52 passed |
+| `webclient-harness/measure.js` | 18 style resolutions + 24 layouts on first pass, flat across 10 passes on both row types — unchanged from the v1.0.19 measurement |
+
+**Finding (harness, fixed): the layout harness measured the wrong box.** It asserted vertical
+centring from `getBoundingClientRect`, which is wrong twice over here — a logo link is an inline
+anchor with `font-size: 0`, so its rect collapses to zero height on the baseline, and the icon's
+vertical correction is a `position: relative` offset on the `::before`, which moves paint without
+moving layout. It reported the icon 4.5px low on a text row when hit-testing showed it 0.5px out.
+Resolved by measuring the **painted** box with `document.elementFromPoint`, which is independent of
+the arithmetic the script uses; a painted-size check was added alongside it. The script itself was
+correct and was not changed for this.
+
+### Step 3 — Comment lint (new standing gate)
+
+`node agentic/tools/check-comments.mjs .` — **404 violations in 19 files at the start of this audit,
+`clean (67 files)` at the end.** Everything outside `agentic/` is in scope.
+
+| Rule | Count | Resolution |
+| --- | --- | --- |
+| `doc-comment` | 251 | Every `///` XML doc block removed. Nothing consumes them — no `GenerateDocumentationFile`, no StyleCop, no `.editorconfig` — so this is not an API-surface change. |
+| `rationale-word` | 65 | Reworded, with the reasoning moved to `ARCHITECTURE.md`. |
+| `comment-run` / `comment-block-length` / `comment-prose` | 86 | Long explanatory blocks cut to two-line notes pointing at the matching `ARCHITECTURE.md` section. |
+| `comment-length`, `commented-code` | 2 | Shortened / removed. |
+
+`agentic/ARCHITECTURE.md` was created to receive the rationale: cross-link buttons (all four
+components plus the client script), detection and pairing, hard links and subtitles, persistence, the
+`ItemRemoved` cascade, metadata lookup, watch sync, and configuration. **No reasoning was deleted** —
+every removed explanation is in that file.
+
+**Verified comment-only**: `git diff -U0 -- '*.cs'` shows no added and no removed non-comment line in
+any C# file. The C# behaviour is byte-identical to `ed30cca`.
+
+### Step 4 — Security review
+
+No new findings. The three recurring shapes were re-checked and all still hold:
+
+- **Library metadata reaching a URL path segment** — `seriesTmdbId`, `imdbId`, `episodeTvdbId` are
+  still `Uri.EscapeDataString`-wrapped before joining a URL that also carries the API key. Covered by
+  four `audit-harness` checks, all passing.
+- **Request-derived string reaching an HTML attribute** — `GetBasePrefix` still rejects anything that
+  is not a plain path, and `CrossLinkUrlResolver` still validates `GetSmartApiUrl`'s result as an
+  absolute http/https URI. `CrossLinkUrlBuilder.Details` still admits only a GUID, the system ID and
+  a fixed marker char.
+- **Composed path escaping its library root** — `BuildHardLinkPath` still resolves and re-checks
+  against the root with a trailing separator. Covered by `audit-harness`, passing.
+
+`ClientScriptController` remains the only `[AllowAnonymous]` route and still reflects nothing from
+the request; the client script it serves was reviewed in full as part of the rewrite.
+
+### Step 5 — Efficiency review
+
+No new findings. The two indexes that keep a full scan from growing as episodes × movies
+(`MovieIndex`, the force-link episode index) and the batched fetches in `CleanupTask` are unchanged.
+The client script's per-render cost is unchanged from v1.0.19 (step 2).
+
+### Step 6 — Concurrency review
+
+No new findings. `ConfigSnapshot` still takes the mutable config collections once at scan start;
+`WatchSyncService`'s reentrancy guard against its own save event is intact; `PairStore` still rebuilds
+its indexes under `_lock` and both `Load` and `Save` still refuse to throw into Jellyfin's event
+dispatch.
+
+### Step 7 — Filesystem and API review
+
+No new findings. Sanitisation (invalid chars, `..` collapsed to a fixed point, Windows reserved
+names), containment, and the copy-backup-write-temp-rename write sequence in `PairStore` are
+unchanged. The delete endpoint's two guards — a pre-existing movie is never deleted, and the *saved*
+configuration decides rather than the request — are intact.
+
+### Step 8 — Sweeps
+
+**PII Sweep**: all 5 checks run over all 69 tracked files, plus the uncommitted working tree.
+**Clean.** Check 1 returned only Jellyfin's own install paths, the sweep patterns matching
+themselves, a test string in `audit-harness`, and the default Edge/Chrome install locations in
+`browser.js` — all four already on the known-acceptable list. Check 2 (email) returned nothing. Check
+3 returned only the project's public GitHub owner handle. Check 4's single non-version-prefixed match
+is `9.0.0.0`, a .NET assembly version in an existing `AUDIT.md` table. Check 5 was read in full: all
+comment lines across the 29 published source files are technical, none personal — and step 3 has now
+capped their length, which makes this check materially cheaper to do properly.
+
+**Scratchpad Sweep**: the session scratchpad held one-off console builds and browser probes written
+while diagnosing the icon in a live browser (`bundle.js`, `console-build.js`, `tempfix.js`,
+`clonetest.js`, `jeidiom*.js`, `probe.js`, `probe2.js`, `probe3.js`, `public-icon.css`) and local
+copies of two third-party scripts read as reference. Nothing promoted: each answered one question,
+and the durable versions of those questions are now checks in `test-layout.js`. No server binaries,
+no `library.db`, no plugin configuration, no `PairStore` JSON, no API keys, no logs. `probe3.js`
+earned the harness's painted-box measurement and its finding is recorded above.
+
+**Open item for the user — `agentic/tools/webclient-harness/diagnose.js` is untracked and stale.**
+It is a console probe that reports "whether the external-links row is rendered as brand badges or as
+text" — a decision the script no longer makes, since removing it is what fixed this feature. It
+predates this session and is not mine to delete. Recommendation: **delete it**. Promoting it would
+mean rewriting it against a design that no longer exists.
+
+### Documentation
+
+- `agentic/ARCHITECTURE.md` — **new**, described under step 3.
+- `agentic/CLAUDE.md` — Pre-Release Audit rewritten from a 7-item list into nine numbered steps, each
+  with its command and its pass condition. Comment lint added as step 3; the PII and scratchpad
+  sweeps are now step 8 and are explicitly mandatory-and-recorded-even-when-clean. `ARCHITECTURE.md`
+  added to the structure diagram. The PII sweep snippet now filters `git ls-files` through
+  `Test-Path`, which stops `Select-String` erroring on a file staged for deletion.
+- `agentic/HANDOFF.md` — `Web/specialtomovie.js` row and the "How the link is styled" section
+  rewritten for the icon-idiom design; two gotchas added (do not detect the row type or copy a
+  neighbour's geometry; comments are lint-enforced); `ARCHITECTURE.md` added to the sibling-doc list.
+- `agentic/tools/README.md` — `check-comments.mjs` row added; `webclient-harness` row corrected
+  (46 and 52 checks, and what they now actually cover).
+- `agentic/tools/webclient-harness/README.md` — rewritten; it still described badge detection,
+  contrast correction and 40/18 checks, none of which exist.
+- `agentic/memory/feedback_comment_lint.md` — **new**, indexed in `MEMORY.md`.
+- **`README.md` checked, no change needed.** No new feature, default, task name or config option:
+  `ShowCrossLinks` and `InjectClientScript` are unchanged, and the icon rebuild is not user-visible
+  as a setting.
+
+---
+
 ## Audit: 2026-09-09 (Session 19 — Badge row joining and alignment, post-v1.0.18)
 
 **Scope**: `Web/specialtomovie.js` — the badge-row search and metric matching added after v1.0.18 —

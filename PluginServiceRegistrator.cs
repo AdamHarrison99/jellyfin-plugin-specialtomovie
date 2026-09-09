@@ -11,12 +11,8 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Jellyfin.Plugin.SpecialToMovie;
 
-/// <summary>
-/// Registers plugin services into the Jellyfin DI container.
-/// </summary>
 public class PluginServiceRegistrator : IPluginServiceRegistrator
 {
-    /// <inheritdoc />
     public void RegisterServices(IServiceCollection serviceCollection, IServerApplicationHost applicationHost)
     {
         serviceCollection.AddSingleton<IPairStore, PairStore>();
@@ -28,9 +24,8 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
 
         serviceCollection.AddSingleton<IHardLinkService, HardLinkService>();
 
-        // The IExternalUrlProvider implementations are found and constructed by Jellyfin's own
-        // part discovery, so they are deliberately not registered here — only the helper they
-        // depend on is, because constructor arguments must be resolvable from the container.
+        // Jellyfin's part discovery constructs the IExternalUrlProvider pair itself.
+        // See agentic/ARCHITECTURE.md, "Cross-link buttons".
         serviceCollection.AddSingleton<CrossLinkUrlResolver>();
         serviceCollection.AddSingleton<IStartupFilter, ScriptInjectionStartupFilter>();
 
