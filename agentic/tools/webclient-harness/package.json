@@ -1,0 +1,12 @@
+{
+  "name": "specialtomovie-webclient-harness",
+  "version": "1.0.0",
+  "private": true,
+  "description": "DOM harness for Web/specialtomovie.js",
+  "scripts": {
+    "test": "node test.js ../../../Web/specialtomovie.js"
+  },
+  "dependencies": {
+    "jsdom": "^27.0.0"
+  }
+}

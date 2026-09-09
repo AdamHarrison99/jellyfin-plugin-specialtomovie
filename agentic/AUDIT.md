@@ -37,6 +37,120 @@ technical, none personal. The only matches returned were the known-acceptable on
 ---
 ---
 
+## Audit: 2026-09-09 (Session 18 — Detail-page cross-link defects reported against v1.0.17.0)
+
+**Scope**: `Web/specialtomovie.js` and `Services/ScriptInjectionStartupFilter.cs`, the two files
+behind the detail-page cross-link enhancement, plus the full mechanical PII and scratchpad sweeps
+over the whole tree. The `.cs` codebase was audited end to end in Session 17 and only the injector
+changed since, so the C# review was scoped to that change rather than repeated in full.
+**Triggered by**: Four defects reported from a live install running v1.0.17.0, followed by an
+explicit request to audit, fix and verify.
+
+### Reported defects, and what actually caused them
+
+All four were one enhancement failing in four visible ways. The fourth report — that the *first*
+click opens a new tab and a click in the resulting tab does not — is what made the rest diagnosable:
+it proved the script was loading and running, which ruled out the injector, the embedded resource,
+the anonymous route and the configuration defaults, all of which were checked and found correct.
+
+| # | Symptom | Root cause | Fix |
+| --- | --- | --- | --- |
+| 1 | No badge icon; the link rendered as bare text among brand logos | `rowIsBadges` skipped every anchor whose `textContent` was non-empty before testing it for an image. The usual way to render a logo row keeps the label for screen readers and hides it in CSS, so on exactly the rows the check existed to detect, every anchor was skipped and the row was judged to be text | Detection now asks whether a caption is *painted*, not whether it exists: `isBadgeAnchor` combines an image test with `text-indent`, `font-size` and an aspect-ratio fallback |
+| 2 | Dark text on a dark background | Nothing ever set a colour; the link inherited whatever the theme gave it, which on a dark theme was unreadable | `backdropIsDark` walks ancestors for the first opaque background, computes relative luminance and sets an `!important` inline colour. Only the text form is touched; the badge keeps its own palette |
+| 3 | Not last in the row | Position was applied once, at upgrade time, and only on the badge path. Other plugins append after us, and the row is rebuilt on every render | `moveToEnd` runs on every pass, for both forms, bounded by a move budget |
+| 4 | First click opened a new tab; the second did not | The fix relied on rewriting `href` and dropping `target`, which cannot win the race against a re-render — the web client rebuilds the row from the server DTO, restoring the absolute URL and `target="_blank"` on a fresh anchor. A click landing before the next upgrade pass got the untouched anchor | A capture-phase document click handler, which does not depend on the anchor having been upgraded: `parseLink` reads the item out of the absolute URL exactly as well as out of the rewritten hash |
+
+Two fragile assumptions were removed while fixing these. The selector no longer requires
+`#itemDetailPage:not(.hide) .itemExternalLinks`; it matches the plugin's own `stm=` marker, which
+cannot drift with a web-client class rename. Had either class name changed, the failure mode would
+have been silent and would have looked exactly like this report.
+
+### Findings from auditing the new code
+
+| # | Severity | Finding | Resolution |
+| --- | --- | --- | --- |
+| 1 | Medium | The capture-phase click handler sees every click in the document and cancelled the default on any link whose fragment merely carried `stm` and `id`. Another plugin's link of that shape would have been swallowed | `parseLink` now validates the exact shape `CrossLinkUrlBuilder` emits: route must be `/details`, marker must be `m` or `s`, id must be a GUID. Four negative cases are asserted in the harness |
+| 2 | Low | The move budget that stops a fight with another last-forcing plugin was consumed by ordinary re-appends and never replenished, so after eight displacements the link would stop being placed at all | The counter is cleared whenever a pass finds the link already last. A genuine fight never reaches that line, so it still terminates |
+| 3 | Low | Nothing made the script idempotent. A second copy — a stale service worker, a manual install alongside the injected tag — would register a second click handler and a second `MutationObserver` | A `window.__specialToMovieLoaded` guard returns early on a second load |
+
+### Efficiency
+
+`rowIsBadges` runs for every link in the row on every mutation pass, and its checks force style and
+layout resolution. The tests were reordered cheapest-first: a plain text row — the common case, and
+the one whose answer is "no" — now costs a single `getComputedStyle` per link, with no
+pseudo-element read and no `getBoundingClientRect`, both of which are reached only when an anchor
+already presents both a picture and text.
+
+### Caching
+
+`ScriptInjectionStartupFilter` correctly strips `ETag` and `Last-Modified` after rewriting the
+document, but set no `Cache-Control`, leaving the browser free to keep serving a heuristically
+cached `index.html` — including one fetched before the plugin was installed, which carries no script
+tag and disables the enhancement entirely until a hard reload. It now sets
+`no-cache, must-revalidate`. This was not one of the four reports and no evidence says it was in
+play, but it is a silent-failure path of exactly the reported kind.
+
+### Verification
+
+- `dotnet build -c Release` — succeeded, 0 warnings, 0 errors
+- `agentic/tools/audit-harness` — **21 checks, all passing** (no regression from Session 17)
+- `agentic/tools/webclient-harness` — **31 checks, all passing**, newly written this session
+
+Every one of the four reported defects has a check that fails against the previous script. Check 7
+in particular exercises twelve consecutive displacements, which the old eight-move budget could not
+survive.
+
+**Not verified here**: jsdom computes style but does not lay out, so `getBoundingClientRect` returns
+zeroes and the aspect-ratio fallback in `captionSuppressed` — the path for a badge whose caption is
+hidden on a child element rather than on the anchor — is not exercised. The CSS-based paths around
+it are. That fallback needs a real browser to confirm.
+
+### PII & Documentation Sweep
+
+Ran over all tracked files plus the four new untracked files, per `CLAUDE.md`.
+
+| Check | Result |
+| --- | --- |
+| 1. Drive-rooted / UNC / home paths | Clean — matches are regex escapes and newline escapes in source, relative MSBuild paths in the `.csproj`, the sweep patterns matching their own documentation, and the known-acceptable Jellyfin install path in `README.md` |
+| 2. Email addresses | Clean — no matches in any tracked or new file |
+| 3. This machine's identity (username, domain, hostname, git user name/email) | Clean — no matches. Also run against `node_modules/`: clean, and the lockfile carries no local path |
+| 4. Dotted quads | Clean — all 30 distinct matches are assembly, ABI or package version numbers |
+| 5. Comment read-through | Clean — the only first-person matches are the editorial "we"/"our" meaning *the plugin*, already settled as not-a-finding in the Session 17 entry |
+
+**No PII finding.**
+
+### Scratchpad & Temporary File Sweep
+
+**Promoted**: the jsdom harness written to verify these fixes became
+[`agentic/tools/webclient-harness/`](tools/webclient-harness/) — 31 checks, its own `README.md`, and
+a row in the tools inventory. `tools/README.md` already named "DOM-stub harnesses for
+`Web/specialtomovie.js`" as belonging there; until now none existed.
+
+**Deleted**: a duplicate copy of the harness and its `node_modules` in the system temp directory; the
+release-verification artifacts from the v1.0.17 release earlier in the session (the downloaded
+release zip, its extracted plugin DLL, the fetched live manifest, the release-notes draft); and two
+sweep working files, one of which held this machine's identity strings and was deleted first. No
+Jellyfin server binaries, `library.db`, plugin configuration, `PairStore` JSON, API keys or exported
+logs were present anywhere. The scratchpad is empty.
+
+### Open decision — `node_modules` committed to the repository
+
+`jsdom` was vendored into `agentic/tools/webclient-harness/node_modules/` on explicit instruction, so
+the harness runs offline with no install step. The cost, recorded here so it stays a considered
+choice rather than a later discovery: **23 MB across 1663 files**, and **85 distinct third-party
+package author emails** that would enter the repository and its permanent history on commit. Those
+are public npm package metadata, not anyone's private detail, and check 2 above passes because the
+directory is untracked at the time of writing. If the size or the email surface is unwanted, the
+alternative is a `node_modules/` line in `.gitignore` and `npm install` in that directory before
+running the harness — `package.json` and `package-lock.json` already pin the exact tree.
+
+Note that **npm added a node_modules/ line to .gitignore by itself** during the install, which would
+have silently un-vendored the dependency. It was reverted. Re-check .gitignore after any npm install
+in this repository.
+
+---
+---
+
 ## Audit: 2026-09-09 (Session 17 — Pre-release v1.0.17.0, Jellyfin 12.0.0 GA re-pin + full codebase audit)
 
 **Scope**: Two parts. (a) The Jellyfin 12 GA re-pin and the release mechanics around it — `Jellyfin.Controller`/`Jellyfin.Model` `12.0.0-rc4` -> `12.0.0`; `AssemblyVersion`/`FileVersion` -> `1.0.17.0`; `build.yaml` and `manifest.json` resynced; `agentic/**` excluded from the plugin's compile globs; `agentic/tools/abi-probe/` added. (b) A full security and efficiency audit of every `.cs` file, with fixes applied and verified.

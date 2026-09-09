@@ -200,6 +200,13 @@ public class ScriptInjectionStartupFilter : IStartupFilter
         context.Response.Headers.Remove("Last-Modified");
         context.Response.Headers.Remove("Accept-Ranges");
 
+        // Removing the validators above leaves the browser with nothing to revalidate against, so
+        // without this it is free to keep serving a heuristically cached copy - including one
+        // fetched before the plugin was installed, which has no script tag in it and so silently
+        // disables the enhancement until the user hard-reloads. Revalidating a document this small
+        // costs little; serving a stale one costs the whole feature.
+        context.Response.Headers.CacheControl = "no-cache, must-revalidate";
+
         await originalBody.WriteAsync(bytes).ConfigureAwait(false);
     }
 }
