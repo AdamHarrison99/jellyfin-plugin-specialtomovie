@@ -1,6 +1,6 @@
 name: "SpecialToMovie"
 guid: "a1b2c3d4-5678-9abc-def0-123456789abc"
-version: "1.0.18.0"
+version: "1.0.19.0"
 targetAbi: "12.0.0.0"
 framework: "net10.0"
 overview: "Detects TV specials that are also movies, creates hard links, and syncs watch status."
@@ -14,9 +14,8 @@ owner: "AdamHarrison99"
 artifacts:
   - "Jellyfin.Plugin.SpecialToMovie.dll"
 changelog: |
-  - Cross-links render as a badge again on rows that show brand logos
-  - Cross-link text picks its colour from the background so it stays readable on any theme
-  - Cross-links are always placed last in the external links row
-  - Clicking a cross-link no longer opens a new tab on the first click
-  - Cross-links no longer depend on jellyfin-web class names, which failed silently
-  - Send Cache-Control on the rewritten index.html so a stale copy cannot disable the script
+  - Cross-link badge joins the row of brand logos even when a plugin renders those
+    logos into a container of its own, which left one side of a pair as plain text
+  - Cross-link badge takes its size and alignment from a neighbouring logo instead
+    of a fixed 28px box, so it lines up with the rest of the row
+  - Detail pages do markedly less style and layout work on every render

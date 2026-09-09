@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "1.0.19.0",
+        "changelog": "Follow-up to 1.0.18 for the detail-page cross-links. The badge now joins the row of brand logos even when another plugin renders those logos into a container of its own, which previously left one side of a pair showing as plain text, and it takes its size and alignment from a neighbouring logo instead of a fixed box so it lines up with the rest of the row. Detail pages also do markedly less style and layout work on every render.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/AdamHarrison99/jellyfin-plugin-specialtomovie/releases/download/v1.0.19/specialtomovie-v1.0.19.zip",
+        "checksum": "4e825cffef123425d5c8a90397087123",
+        "timestamp": "2026-09-09T17:26:50Z"
+      },
+      {
         "version": "1.0.18.0",
         "changelog": "Fixes the detail-page cross-link buttons, which failed in four ways on real installs: no badge icon on rows that show brand logos, dark text on a dark theme, the wrong position in the row, and a first click that opened a new tab instead of navigating in the app. The links no longer depend on jellyfin-web class names, so a web client change can no longer disable them silently, and the rewritten index.html now sends Cache-Control so a stale cached copy cannot do the same.",
         "targetAbi": "12.0.0.0",
