@@ -90,9 +90,15 @@ The manifest.json in the repo is what Jellyfin servers poll for updates — push
 
 ## Version Bumping Convention
 
-- **Patch** (1.0.x.0): Bug fixes, detection improvements
-- **Minor** (1.x.0.0): New features, new config options
-- **Major** (x.0.0.0): Breaking changes
+- **Patch** (2.0.x.0): Bug fixes, detection improvements
+- **Minor** (2.x.0.0): New features, new config options
+- **Major** (x.0.0.0): **The Jellyfin major version this release builds against.** `1.x` was the
+  Jellyfin 10.x line; `2.x` is the Jellyfin 12 line. Check `targetAbi` against the previous release
+  before choosing a number — a change in its first component is a major bump, and positions two and
+  three reset to zero. Also used for a breaking change in the plugin itself.
+
+`1.0.16.0` and `1.0.17.0` moved the plugin to Jellyfin 12 and should have been `2.0.0.0` under this
+rule; that was corrected at the `2.0.0.0` release rather than retroactively.
 
 ## Pre-Release Audit
 
