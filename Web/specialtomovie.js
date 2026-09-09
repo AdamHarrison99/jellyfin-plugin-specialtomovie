@@ -40,6 +40,10 @@
     // elements a converting plugin realistically adds without widening the search to the page.
     var MAX_ROW_HOPS = 4;
 
+    // Upper bound on links examined while looking for the row, however far the walk widens. A page
+    // with hundreds of links must not turn every render into a full sweep of them.
+    var MAX_ANCHORS_SCANNED = 60;
+
     // Text nodes the web client puts between links. Commas are what Jellyfin ships; the others are
     // here because a separator left dangling beside a badge looks broken, and which character a
     // given client or theme uses is not worth being wrong about.
@@ -233,7 +237,13 @@
 
     // The first badge-like link inside this subtree, or null. Returning the element rather than a
     // boolean is what lets the caller both join the row it belongs to and copy its measurements.
-    function findBadgeIn(root, self) {
+    // Marks anchors already judged during the current findBadgeRow walk. The search widens at every
+    // hop, so without this each hop re-tests everything the previous one did - and every test costs
+    // a style resolution. Measured on a ten-link text row, the walk cost around 320 style
+    // resolutions per pass before this; the budget below caps the pathological case besides.
+    var scanToken = 0;
+
+    function findBadgeIn(root, self, budget) {
         if (!root || !root.querySelectorAll) {
             return null;
         }
@@ -243,9 +253,17 @@
 
         for (var i = 0; i < anchors.length; i++) {
             var other = anchors[i];
-            if (other === self || other.classList.contains('specialtomovie-link')) {
+            if (other === self || other.stmScan === scanToken ||
+                other.classList.contains('specialtomovie-link')) {
                 continue;
             }
+
+            if (budget.left <= 0) {
+                return null;
+            }
+
+            other.stmScan = scanToken;
+            budget.left--;
 
             if (isBadgeAnchor(other, view)) {
                 return other;
@@ -270,9 +288,12 @@
     function findBadgeRow(anchor) {
         var node = anchor.parentNode;
         var hops = 0;
+        var budget = { left: MAX_ANCHORS_SCANNED };
+
+        scanToken++;
 
         while (node && node.nodeType === 1 && node !== document.body && hops < MAX_ROW_HOPS) {
-            var badge = findBadgeIn(node, anchor);
+            var badge = findBadgeIn(node, anchor, budget);
             if (badge && badge.parentNode) {
                 return { badge: badge, container: badge.parentNode };
             }
@@ -296,6 +317,15 @@
     // by luck - it was visibly out of line against a real row. The tile stays square: it is a mark,
     // not a wordmark, so it matches the row's height and not any particular logo's width.
     function matchBadgeMetrics(anchor, badge) {
+        // Already sized against this same neighbour: nothing to do. getBoundingClientRect forces
+        // layout, so re-measuring on every mutation made each render more expensive than the render
+        // itself - measured at 140 forced layouts across ten passes of a badge row. An anchor that
+        // the web client has rebuilt arrives with no inline height and is measured again, which is
+        // exactly when the row's size can have changed.
+        if (anchor.style.height && anchor.stmRef === badge) {
+            return;
+        }
+
         var view = anchor.ownerDocument ? anchor.ownerDocument.defaultView : null;
         var style = computed(view, badge);
         if (!style) {
@@ -306,6 +336,7 @@
         if (rect && rect.height > 0) {
             anchor.style.setProperty('height', rect.height + 'px', 'important');
             anchor.style.setProperty('width', rect.height + 'px', 'important');
+            anchor.stmRef = badge;
         }
 
         // 'inline' would collapse a box whose content is a background image, and 'none' would hide
@@ -328,6 +359,9 @@
         for (var i = 0; i < MATCHED_PROPERTIES.length; i++) {
             anchor.style.removeProperty(MATCHED_PROPERTIES[i]);
         }
+
+        // Drop the memo with the styles it belongs to, so returning to badge form re-measures.
+        anchor.stmRef = null;
     }
 
     function parseRgb(value) {
@@ -384,6 +418,13 @@
     // important inline value because what it overrides is the web client's own styling for links in
     // this row, which an ordinary inline value does not always outrank.
     function applyContrastColour(anchor) {
+        // Same reasoning as matchBadgeMetrics: the walk costs a style resolution per ancestor, and
+        // the answer cannot change for an anchor that is already coloured. A rebuilt anchor has no
+        // inline colour and is recomputed.
+        if (anchor.style.color) {
+            return;
+        }
+
         var colour = backdropIsDark(anchor) ? '#e9e9e9' : '#1c1c1c';
         try {
             anchor.style.setProperty('color', colour, 'important');

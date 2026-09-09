@@ -28,11 +28,115 @@ and each finding with its resolution. A clean sweep is still recorded.
 | The .NET SDK version used for a release build | `HANDOFF.md` | Documents the toolchain the build requires, not an inventory of a specific machine. |
 | Four-part dotted versions (`1.0.16.0`, `12.0.0.0`, `10.11.11.0`) | throughout | Assembly and ABI versions, not IP addresses. These dominate the dotted-quad check. |
 | The sweep patterns matching themselves | `agentic/CLAUDE.md` | The documented regexes match their own documentation. |
+| Default Edge and Chrome install locations | `agentic/tools/webclient-harness/browser.js` | The vendors' own default paths, identical on every machine of that OS and not read from this one. They are the **last** resort in the lookup, after `STM_BROWSER` and `PATH`, and are confined to that one file so no other tool repeats them. |
 
 **Baseline — 2026-08-20**: first full sweep, all 43 tracked files, run in both Git Bash and
 PowerShell. **Clean.** No absolute developer paths, machine names, share names, email addresses, or
 credentials in any tracked file. All 115 source comment lines were read individually — every one is
 technical, none personal. The only matches returned were the known-acceptable ones above.
+
+---
+---
+
+## Audit: 2026-09-09 (Session 19 — Badge row joining and alignment, post-v1.0.18)
+
+**Scope**: `Web/specialtomovie.js` — the badge-row search and metric matching added after v1.0.18 —
+and the `webclient-harness` tooling around it. No `.cs` file changed since Session 18, so the C#
+codebase was not re-reviewed; the build and the C# harness were re-run to confirm no regression.
+**Triggered by**: Two further defects reported from a live install after v1.0.18 shipped, followed by
+an explicit request to audit, fix and verify.
+
+### The measurement gap, closed
+
+Session 18 recorded that two paths could not be verified because jsdom does not lay out:
+`matchBadgeMetrics`, and the aspect-ratio fallback in `captionSuppressed`. That was accepted at the
+time and should not have been. Both are now covered by
+[`test-layout.js`](tools/webclient-harness/test-layout.js), which drives an already-installed Edge or
+Chrome through `playwright-core` — no browser is downloaded.
+
+It is a real regression test, not a restatement of the fix. Run against the script exactly as shipped
+in v1.0.18 it fails **16 of its 18 checks**, and reproduces the reported symptom precisely: the
+cross-link measures **88x16** — the proportions of a text link — instead of a square tile matching
+the row. Against the fix, all 18 pass, at logo heights of both 32px and 24px so that a hard-coded
+size cannot satisfy it.
+
+A false negative was caught while establishing that control. The first control run compared against
+`HEAD:Web/specialtomovie.js` and reported 18/18 passing, which would have meant the test proved
+nothing. `HEAD` had already advanced to include the fix; the pre-fix script was at the release commit.
+**A control run that passes is a result to distrust, not to accept.**
+
+### Findings
+
+All three are efficiency, all measured rather than reasoned about, using
+[`measure.js`](tools/webclient-harness/measure.js) — written for this audit and promoted with it.
+Counts are for a row of ten links plus the cross-link, over ten subsequent render passes.
+
+| # | Severity | Finding | Resolution |
+| --- | --- | --- | --- |
+| 1 | Medium | The upward search for the badge row widens at every hop, and re-tested every link the previous hop had already tested. Each test costs a style resolution, and the search runs on every mutation. A ten-link text row cost **3195 style resolutions across ten passes** (~320 per pass), scaling with links x hops | Anchors are marked with a per-walk token and tested once. A `MAX_ANCHORS_SCANNED` budget of 60 bounds the pathological case of a page with hundreds of links |
+| 2 | Medium | `matchBadgeMetrics` called `getBoundingClientRect` on every pass, forcing layout each time — **140 forced layouts across ten passes** of a badge row | Skipped when the tile is already sized against the same neighbour. A rebuilt anchor arrives with no inline height, so a genuine size change is still picked up |
+| 3 | Low | `applyContrastColour` re-walked the ancestor chain for a colour that cannot have changed | Skipped when the anchor already carries an inline colour, on the same reasoning |
+
+Measured after the fixes:
+
+| Row | Style resolutions (10 passes) | Forced layouts (10 passes) |
+| --- | --- | --- |
+| text | 3195 -> **700** (-78%) | 0 -> 0 |
+| badges | 140 -> **71** (-49%) | 140 -> **71** (-49%) |
+
+The trade-off in findings 2 and 3 is deliberate and worth stating: a size or theme change that
+happens *without* the web client rebuilding the row will not be picked up until it next does. Both
+memos key on inline state that a rebuilt anchor does not have, and the client rebuilds this row on
+every render, so the window is small. Paying a forced layout on every mutation to close it is not a
+good trade.
+
+### Security
+
+No finding. The new code reads computed style from neighbouring elements and writes the values back
+as inline style on the plugin's own anchor; the values come from the browser's own computed-style
+serialisation, never from a URL, a DTO, or anything user-supplied. `findBadgeRow` only reads the DOM.
+The two expando markers it sets (`stmScan`, `stmRef`) are plain properties on elements, not
+attributes, so they neither serialise into the document nor trigger the mutation observer.
+
+`playwright-core` was added as a **devDependency** — harness-only, never referenced by the plugin and
+never shipped in the DLL. It launches a browser already on the machine and downloads nothing.
+
+### PII & Documentation Sweep
+
+Ran over all tracked files plus the new untracked ones, per `CLAUDE.md`.
+
+| Check | Result |
+| --- | --- |
+| 1. Drive-rooted / UNC / home paths | One item to settle, now known-acceptable: `browser.js` lists the vendors' default install locations for Edge and Chrome. Every other match is a regex escape, a newline escape, or a relative MSBuild path |
+| 2. Email addresses | Clean |
+| 3. This machine's identity | Clean |
+| 4. Dotted quads | Clean — all 24 distinct matches are assembly or ABI versions |
+| 5. Comment read-through | Clean — no personal reference in any new comment |
+
+**No PII finding.** The browser paths were deliberately confined to one file, `browser.js`, rather
+than duplicated across the two harnesses that need them, and are consulted **last**: `STM_BROWSER`
+is checked first, then whatever is on `PATH`. Nothing is read from this machine to produce them.
+
+### Scratchpad & Temporary File Sweep
+
+**Promoted**: [`measure.js`](tools/webclient-harness/measure.js), which produced every count quoted
+above — a finding backed by numbers whose tool has been deleted cannot be re-checked at the next
+change. [`browser.js`](tools/webclient-harness/browser.js) was factored out at the same time so the
+two browser-driven harnesses share one lookup.
+
+**Deleted**: a scratch copy of the measurement script that had been dropped into the tool directory
+under a leading-underscore name, and an extracted copy of the v1.0.18 script used as the control.
+Both are reproducible — the second with `git show <ref>:Web/specialtomovie.js`, which is now
+documented in `measure.js` rather than left as session knowledge. No server binaries, library
+database, plugin configuration, `PairStore` JSON, API keys or logs were present.
+
+### Verification
+
+- `dotnet build -c Release` — succeeded, 0 warnings, 0 errors
+- `agentic/tools/audit-harness` — **21 checks, all passing** (unchanged, no C# regression)
+- `agentic/tools/webclient-harness` — `npm test` runs both halves: **40 behaviour checks** (jsdom) and
+  **18 layout checks** (real browser), all passing
+- Control: the layout harness against the v1.0.18 script — **16 of 18 fail**, as it must
 
 ---
 ---
@@ -146,7 +250,19 @@ both reported against a live install:
 The second is the more instructive: the enhancement was still assuming a DOM shape, just a subtler
 one than the class names removed earlier in this session. Joining the row it finds, rather than
 decorating whatever container it happens to be in, removes the assumption rather than replacing it.
-Both are covered by checks 10 and 11 of the web client harness, which now runs **40 checks**.
+Both are covered by checks 10 and 11 of the jsdom harness, which now runs **40 checks**. The size
+and alignment fix is measurement, which jsdom cannot see at all, so a second harness was added:
+[`test-layout.js`](tools/webclient-harness/test-layout.js) drives an already-installed Edge or Chrome
+through `playwright-core` and asserts the tile matches its neighbours in height, stays square and
+sits centred on the row, against logo heights of both 32px and 24px so a hard-coded size cannot pass.
+
+It is a true regression test rather than a restatement of the fix: run against the script as shipped
+in v1.0.18 it fails **16 of 18 checks**, and reproduces the reported symptom exactly - the cross-link
+measures 88x16, the proportions of a text link, rather than a square tile matching the row. This also
+closes the gap recorded in the Session 18 verification note, which stated that the aspect-ratio
+fallback in `captionSuppressed` could not be exercised without a real browser; the layout harness
+reaches it, because the badges it builds hide their captions on a child span exactly as a real
+converting plugin does.
 
 ### Resolved — `node_modules` is gitignored, not committed
 

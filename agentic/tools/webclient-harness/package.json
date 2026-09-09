@@ -2,11 +2,16 @@
   "name": "specialtomovie-webclient-harness",
   "version": "1.0.0",
   "private": true,
-  "description": "DOM harness for Web/specialtomovie.js",
+  "description": "Behaviour and layout harness for Web/specialtomovie.js",
   "scripts": {
-    "test": "node test.js ../../../Web/specialtomovie.js"
+    "test": "node test.js && node test-layout.js",
+    "test:behaviour": "node test.js",
+    "test:layout": "node test-layout.js"
   },
   "dependencies": {
     "jsdom": "^27.0.0"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.63.0"
   }
 }

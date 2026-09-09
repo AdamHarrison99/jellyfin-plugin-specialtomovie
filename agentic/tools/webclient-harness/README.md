@@ -20,11 +20,31 @@ in a shipped release. The bugs behind checks 1, 2 and 4 all reached users.
 
 ```
 cd agentic/tools/webclient-harness
-node test.js
+npm test
 ```
 
-It defaults to the repository's own `Web/specialtomovie.js`; pass a path to check a different copy.
-Exit `0` = every check passed, `1` = at least one failed, `2` = the script could not be read.
+That runs both halves:
+
+| Script | Engine | Covers |
+| --- | --- | --- |
+| `node test.js` | jsdom | behaviour - 40 checks |
+| `node test-layout.js` | real browser | measurement and alignment - 18 checks |
+
+`node measure.js` is a diagnostic rather than a test: it counts the style resolutions and forced
+layouts one upgrade pass causes, for a text row and a badge row. There is no pass or fail - compare
+two revisions by pointing it at each in turn. It found the two efficiency faults fixed after v1.0.18,
+neither of which was apparent from reading the code.
+
+Both browser-driven scripts share [`browser.js`](browser.js), which prefers `STM_BROWSER`, then
+`PATH`, then the vendors' default install locations.
+
+Each defaults to the repository's own `Web/specialtomovie.js`; pass a path to check a different copy,
+which is how a shipped build or a previous release can be tested. Exit `0` = every check passed,
+`1` = at least one failed, `2` = the script could not be read, or no browser was found.
+
+`test-layout.js` drives an **already-installed** Edge or Chrome through `playwright-core`, so no
+browser is downloaded. Set `STM_BROWSER` to point at a specific executable if neither is found on one
+of the usual paths.
 
 `jsdom` is **not** committed - `node_modules/` is gitignored. Run `npm install` in this directory
 once before the first run; `package.json` and `package-lock.json` pin the exact tree, so the install
@@ -52,11 +72,18 @@ falls through correctly; the notices are noise, not failures. Filter them with
 
 ## Limits
 
-jsdom computes style but does not lay out, so `getBoundingClientRect` returns zeroes. Two things
-therefore go unexercised here and need a real browser:
+jsdom computes style but does not lay out, so `getBoundingClientRect` returns zeroes there. Two
+parts of the script depend on measurement and are therefore invisible to `test.js`:
 
-- the shape-based fallback in `captionSuppressed`, which catches a badge whose caption is hidden on a
-  child element rather than on the anchor. Checks 1 and 8 cover the CSS-based paths around it.
-- the height and width copy in `matchBadgeMetrics`. Check 11 pins the properties that come from
-  computed style — display, vertical-align, margins — and asserts the size copy is *skipped* rather
-  than applied as a zero-sized box, but the measurement itself cannot be verified without layout.
+- the shape-based fallback in `captionSuppressed`, which recognises a badge whose caption is hidden on
+  a child element rather than on the anchor
+- the height and width copy in `matchBadgeMetrics`
+
+`test-layout.js` exists for exactly those two and checks them in a real engine, against rows of 32px
+and 24px logos so that a hard-coded size cannot pass. It is a true regression test: run it against
+the script as shipped in v1.0.18 and **16 of its 18 checks fail**, reproducing the reported symptom
+directly - the cross-link measures 88x16, the shape of a text link, instead of a square tile matching
+the row.
+
+What remains unverified anywhere is visual appearance: that the artwork reads clearly at the row's
+size, and that its colour sits well beside real brand logos. No harness answers that.
