@@ -26,8 +26,9 @@ node test.js
 It defaults to the repository's own `Web/specialtomovie.js`; pass a path to check a different copy.
 Exit `0` = every check passed, `1` = at least one failed, `2` = the script could not be read.
 
-`jsdom` is committed under `node_modules/` so the harness runs offline with no install step. If it
-is ever missing, `npm install` in this directory restores it from `package.json`.
+`jsdom` is **not** committed - `node_modules/` is gitignored. Run `npm install` in this directory
+once before the first run; `package.json` and `package-lock.json` pin the exact tree, so the install
+is reproducible.
 
 jsdom does not implement `getComputedStyle` for pseudo-elements and prints a `Not implemented`
 notice when the script probes `::before` / `::after` for a background image. That path is guarded and

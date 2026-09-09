@@ -133,20 +133,22 @@ sweep working files, one of which held this machine's identity strings and was d
 Jellyfin server binaries, `library.db`, plugin configuration, `PairStore` JSON, API keys or exported
 logs were present anywhere. The scratchpad is empty.
 
-### Open decision — `node_modules` committed to the repository
+### Resolved — `node_modules` is gitignored, not committed
 
-`jsdom` was vendored into `agentic/tools/webclient-harness/node_modules/` on explicit instruction, so
-the harness runs offline with no install step. The cost, recorded here so it stays a considered
-choice rather than a later discovery: **23 MB across 1663 files**, and **85 distinct third-party
-package author emails** that would enter the repository and its permanent history on commit. Those
-are public npm package metadata, not anyone's private detail, and check 2 above passes because the
-directory is untracked at the time of writing. If the size or the email surface is unwanted, the
-alternative is a `node_modules/` line in `.gitignore` and `npm install` in that directory before
-running the harness — `package.json` and `package-lock.json` already pin the exact tree.
+Vendoring `jsdom` into the repository was considered and rejected: it would have added **23 MB across
+1663 files**, and **85 distinct third-party package author emails**, to permanent history. Those are
+public npm package metadata rather than anyone's private detail, so this was a size and hygiene call
+rather than a PII finding. `node_modules/` is in `.gitignore`; `package.json` and `package-lock.json`
+pin the exact tree, so `npm install` in `agentic/tools/webclient-harness` reproduces it.
 
-Note that **npm added a node_modules/ line to .gitignore by itself** during the install, which would
-have silently un-vendored the dependency. It was reverted. Re-check .gitignore after any npm install
-in this repository.
+The PII sweep above therefore covers the harness sources only, which is the correct scope. Should
+the dependency ever be vendored after all, re-run check 2 over `node_modules/` and expect those 85
+addresses to need a known-acceptable entry of their own.
+
+Worth knowing for next time: **npm added a `node_modules/` line to `.gitignore` by itself** during
+the install. Re-read `.gitignore` after any `npm install` in this repository rather than assuming it
+is unchanged - in this instance it happened to match the decision taken, but it was not a deliberate
+edit.
 
 ---
 ---
