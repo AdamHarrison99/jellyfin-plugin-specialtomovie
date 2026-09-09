@@ -3,16 +3,25 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>Jellyfin.Plugin.SpecialToMovie</RootNamespace>
-    <AssemblyVersion>1.0.16.0</AssemblyVersion>
-    <FileVersion>1.0.16.0</FileVersion>
+    <AssemblyVersion>1.0.17.0</AssemblyVersion>
+    <FileVersion>1.0.17.0</FileVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Jellyfin.Controller" Version="12.0.0-rc4" />
-    <PackageReference Include="Jellyfin.Model" Version="12.0.0-rc4" />
+    <PackageReference Include="Jellyfin.Controller" Version="12.0.0" />
+    <PackageReference Include="Jellyfin.Model" Version="12.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- agentic/ holds the agent-facing docs and standalone tooling projects that build on their
+         own. Without these excludes the SDK's default globs pull their sources - and any obj/
+         output they leave behind - into the plugin assembly, which fails the build. -->
+    <Compile Remove="agentic/**" />
+    <EmbeddedResource Remove="agentic/**" />
+    <None Remove="agentic/**" />
   </ItemGroup>
 
   <ItemGroup>

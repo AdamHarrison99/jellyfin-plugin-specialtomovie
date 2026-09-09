@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "1.0.17.0",
+        "changelog": "Jellyfin 12.0.0 general availability — the plugin now builds against the released 12.0.0 packages instead of 12.0.0-rc4. Adds cross-link buttons on the detail page to jump between a linked special and its movie, ignore list entries that can name a whole series, and pair removal that prompts differently depending on whether media files are affected. Scheduled task names are prefixed with the plugin name. Hardening from a full audit: the pair store no longer throws when its file cannot be written or read, provider IDs are escaped before use in TMDB/TVDB request paths, and full scans do less redundant work on large libraries.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/AdamHarrison99/jellyfin-plugin-specialtomovie/releases/download/v1.0.17/specialtomovie-v1.0.17.zip",
+        "checksum": "ae2a3365b30e1d3353ebd6f283b10ec2",
+        "timestamp": "2026-09-09T16:03:34Z"
+      },
+      {
         "version": "1.0.16.0",
         "changelog": "Jellyfin 12 support — the plugin now targets .NET 10 and the Jellyfin 12 API surface. Requires Jellyfin 12.0.0 or later; Jellyfin 10.11 servers should stay on 1.0.15.0. No functional or behavioral changes.",
         "targetAbi": "12.0.0.0",
