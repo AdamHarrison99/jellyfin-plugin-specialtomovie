@@ -44,7 +44,7 @@ function page(kind) {
         '<div id="itemDetailPage"><div class="wrap"><div class="inner">' +
         '<div class="itemExternalLinks">' + others +
         '<a href="https://host:8096/web/#/details?id=' + ID + '&serverId=s1&stm=m"' +
-        ' target="_blank">Movie Version</a>' +
+        ' target="_blank">Linked Movie</a>' +
         '</div></div></div></div></body></html>';
 }
 

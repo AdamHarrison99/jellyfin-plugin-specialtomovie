@@ -84,8 +84,8 @@ services.AddHostedService<LibraryEventHandler>();
 | `Tasks/CleanupTask.cs` | Validates all pairs, repairs inconsistencies, syncs subtitles. Every `CleanupIntervalHours` (default 6). |
 | `Api/SpecialToMovieController.cs` | REST endpoints — full table below. Admin-only. |
 | `Api/ClientScriptController.cs` | Serves `Web/specialtomovie.js` at `GET /SpecialToMovie/ClientScript`. The plugin's **only** `[AllowAnonymous]` route — the browser fetches it before sign-in. Returns a fixed embedded asset, reflects nothing from the request. |
-| `Providers/LinkedMovieUrlProvider.cs` | `IExternalUrlProvider` — the "Movie Version" button on a linked special's detail page. |
-| `Providers/LinkedSpecialUrlProvider.cs` | `IExternalUrlProvider` — the "TV Special" button on a linked movie's detail page. |
+| `Providers/LinkedMovieUrlProvider.cs` | `IExternalUrlProvider` — the "Linked Movie" button on a linked special's detail page. |
+| `Providers/LinkedSpecialUrlProvider.cs` | `IExternalUrlProvider` — the "Linked Special" button on a linked movie's detail page. |
 | `Providers/CrossLinkUrlBuilder.cs` | Pure string helper holding the details-route shape and the two marker characters. One definition of the URL format. |
 | `Providers/CrossLinkUrlResolver.cs` | Builds the link URL; the only DI-registered piece of the cross-link feature. Always emits a full URL when one can be derived from the in-flight request via `IServerApplicationHost.GetSmartApiUrl`, falling back to the bare hash route when there is no ambient request or the result is not a valid http/https URL. |
 | `Services/ScriptInjectionStartupFilter.cs` | `IStartupFilter` that injects the client `<script>` tag into `index.html` as it is served. Fails open on every path. Runs outside the server's base-URL branch, so it matches the request path by suffix and re-applies the base-URL prefix to the tag it writes. |
@@ -165,7 +165,7 @@ Persistence: single JSON file (`pairs.json`), `lock (_lock)` around all reads/wr
 | `ShowCrossLinks` | `true` | Master switch for the detail-page cross-link buttons. Read per request by both `IExternalUrlProvider`s and by the startup filter. |
 
 `ShowCrossLinks` is the whole of this feature's UI: one checkbox in the General section. The button
-captions ("Movie Version", "TV Special"), the URL form, and script injection are **not** surfaced, by
+captions ("Linked Movie", "Linked Special"), the URL form, and script injection are **not** surfaced, by
 deliberate removal rather than omission — see the note under `Web/specialtomovie.js` above and the
 as-built section of the cross-link plan.
 | `InjectClientScript` | `true` | Whether `ScriptInjectionStartupFilter` rewrites `index.html` to add the client script tag. **Not surfaced in the config UI** — it is the escape hatch if the middleware ever misbehaves, editable in the stored plugin configuration. Off leaves the links working as plain text that opens a new tab. |

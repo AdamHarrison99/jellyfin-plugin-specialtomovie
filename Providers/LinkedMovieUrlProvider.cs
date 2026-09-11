@@ -30,7 +30,7 @@ public class LinkedMovieUrlProvider : IExternalUrlProvider
     }
 
     // Read at startup to sort providers, and the one part of the link the web client escapes.
-    public string Name => "Movie Version";
+    public string Name => "Linked Movie";
 
     public IEnumerable<string> GetExternalUrls(BaseItem item)
     {

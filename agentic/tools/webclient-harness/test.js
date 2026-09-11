@@ -62,7 +62,7 @@ function makePage({ logos }) {
         '  <div id="itemDetailPage">' +
         '    <div class="itemExternalLinks">' +
         '      ' + others +
-        '      <a href="https://host:8096/web/#/details?id=' + MOVIE_ID + '&serverId=s1&stm=m" target="_blank">Movie Version</a>' +
+        '      <a href="https://host:8096/web/#/details?id=' + MOVIE_ID + '&serverId=s1&stm=m" target="_blank">Linked Movie</a>' +
         '    </div>' +
         '  </div>' +
         '</body></html>',
@@ -106,10 +106,10 @@ function clickOn(dom, el, opts) {
 
         check('upgraded', a.hasAttribute('data-stm-upgraded'));
         check('rendered as an icon', a.classList.contains('specialtomovie-link'), 'class=' + a.className);
-        check('caption kept as the accessible name', a.getAttribute('aria-label') === 'Movie Version');
-        check('caption kept as the tooltip', a.getAttribute('title') === 'Movie Version');
+        check('caption kept as the accessible name', a.getAttribute('aria-label') === 'Linked Movie');
+        check('caption kept as the tooltip', a.getAttribute('title') === 'Linked Movie');
         check('caption still in the DOM for screen readers',
-            (a.textContent || '').trim() === 'Movie Version');
+            (a.textContent || '').trim() === 'Linked Movie');
         check('href reduced to a hash',
             a.getAttribute('href') === '#/details?id=' + MOVIE_ID + '&serverId=s1&stm=m',
             a.getAttribute('href'));
@@ -132,13 +132,13 @@ function clickOn(dom, el, opts) {
         '  <div id="itemDetailPage" class="hide">' +
         '    <div class="itemExternalLinks">' +
         '      <a href="https://anidb.net/a1">aniDB</a>, ' +
-        '      <a href="https://host:8096/web/#/details?id=' + SPECIAL_ID + '&serverId=s1&stm=s">TV Special</a>' +
+        '      <a href="https://host:8096/web/#/details?id=' + SPECIAL_ID + '&serverId=s1&stm=s">Linked Special</a>' +
         '    </div>' +
         '  </div>' +
         '  <div id="itemDetailPage2">' +
         '    <div class="itemExternalLinks visible-row">' +
         '      <a href="https://anidb.net/a2">aniDB</a>, ' +
-        '      <a href="https://host:8096/web/#/details?id=' + MOVIE_ID + '&serverId=s1&stm=m">Movie Version</a>' +
+        '      <a href="https://host:8096/web/#/details?id=' + MOVIE_ID + '&serverId=s1&stm=m">Linked Movie</a>' +
         '    </div>' +
         '  </div>' +
         '</body></html>',
@@ -169,7 +169,7 @@ function clickOn(dom, el, opts) {
     // Deliberately no wait. Rebuild the anchor the way the web client does on a re-render: absolute
     // URL, target="_blank", no upgrade marker. This is the window the first click used to land in.
     let row = rowOf(dom);
-    row.innerHTML = '<a href="https://host:8096/web/#/details?id=' + SPECIAL_ID + '&serverId=s1&stm=s" target="_blank">TV Special</a>';
+    row.innerHTML = '<a href="https://host:8096/web/#/details?id=' + SPECIAL_ID + '&serverId=s1&stm=s" target="_blank">Linked Special</a>';
     const fresh = row.querySelector('a');
     check('anchor really is unupgraded', !fresh.hasAttribute('data-stm-upgraded'));
     check('anchor still targets a new tab', fresh.getAttribute('target') === '_blank');

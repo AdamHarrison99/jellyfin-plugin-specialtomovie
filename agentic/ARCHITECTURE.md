@@ -200,6 +200,40 @@ Points that each cost a bug:
   cannot read itself back and walk the icon across the row.
 - **The shift is applied as a relative offset, not as `vertical-align`**, so correcting it cannot
   change the height of the line the row sits on.
+- **The corrections are re-derived whenever the row has moved, not taken once.** This row does not
+  arrive finished. The web client renders it as plain anchors and adds its own `emby-button` class
+  when it upgrades the element — that class carries `display: inline-flex; vertical-align: middle`,
+  so a link's box changes shape the moment it lands. A user's logo CSS can apply later still, and
+  Jellyfin-Enhanced appends its own links after an API call. A correction measured inside that
+  window describes a row that no longer exists, and the icon used to keep it forever:
+  `data-stm-matched` was a flag, set once and read as "done". It now carries a **key** — the
+  container's width, the icon's own box, and the identity and box of the link it was measured
+  against — and any pass that computes a different key measures again. This was reported as an icon
+  a few pixels low on one item, high on another, and different again after a refresh. It was never
+  the item: it was which moment the single measurement landed in. It is also why a *movie* page
+  always looked right — Jellyfin-Enhanced appends its Seerr link late, which moves our icon back to
+  the end of the row and forces a fresh measurement on a settled row. Seerr links are only added for
+  movies and series, so on a special nothing ever disturbed the first measurement.
+- **A resize and a short settle series trigger a pass, on top of the DOM observer.** The observer
+  sees DOM changes, and the row can change without one: a resize rewraps it, and a stylesheet
+  arriving late restyles every link in it. Re-checking a few times after arriving on a page covers
+  the second, which nothing else can see.
+- **The icon aligns to the nearest link the row actually draws**, not to whatever element happens to
+  sit before it. A neighbour hidden by a theme, or one an installed logo pack has no rule for, has
+  no box and therefore no position; measuring against it produced a correction the size of the
+  distance to the top of the viewport, which the sanity limit then threw away — leaving the icon
+  unaligned in a row that needed a correction.
+- **A correction is only taken from a link on the same line**, tested by whether the icon follows
+  that link along the line *or* their boxes overlap vertically. Neither test alone survives every
+  row: a top-aligned box in a tall line never overlaps the icon's baseline box, and the overlap test
+  is the only one left when a theme uses negative margins. A wrapped icon on a narrow phone was
+  being dragged up a line by a correction measured against the line above.
+- **The spacing correction only ever adds.** The separators between these links are the web client's
+  own text, not ours to edit, so where a hidden link leaves two separators behind, the icon can be
+  pushed out but not pulled in.
+- **What it costs.** A pass on a visible detail page reads about five more boxes than before to
+  compute the key, and writes nothing when the key matches: ten passes over a settled row produce
+  zero style writes, so a stable row is measured exactly once.
 - **No hover or focus styling of our own**, and the theme's button chrome is cancelled the way the
   logo rules cancel it. A row of logos that do not react to the pointer, with one tile that lifts and
   brightens, looks broken — and on themes with no hover treatment at all it looks worse.

@@ -23,6 +23,10 @@
     // A bigger correction than this is not a row the icon belongs in.
     var MAX_SHIFT = 40;
 
+    // ! When to look again after arriving on a page, in milliseconds.
+    // A stylesheet arriving late restyles this row without touching the DOM.
+    var SETTLE_CHECKS = [400, 1200, 3000];
+
     // ! Our own marker, and nothing about the web client's markup. parseLink does the vetting.
     var LINK_SELECTOR = 'a[href*="stm="]';
 
@@ -186,9 +190,55 @@
 
     // Where a link in this row is painted, vertically.
     // ! A zero-height rect is a baseline, and a logo's icon is centred on it.
-    function visualCentre(el) {
-        var rect = el.getBoundingClientRect();
+    function visualCentre(rect) {
         return rect.height > 0 ? rect.top + rect.height / 2 : rect.top;
+    }
+
+    // The nearest element before this link that the row actually draws.
+    // ! A hidden or empty sibling has no position to sit against.
+    function rowReference(anchor) {
+        var node = anchor.previousElementSibling;
+
+        while (node) {
+            if (node.getBoundingClientRect().width > 0 &&
+                window.getComputedStyle(node).visibility !== 'hidden') {
+                return node;
+            }
+
+            node = node.previousElementSibling;
+        }
+
+        return null;
+    }
+
+    // Whether this link comes after that one along the line.
+    function follows(theirs, mine, rtl) {
+        return rtl ? mine.right <= theirs.left + 0.5 : mine.left >= theirs.right - 0.5;
+    }
+
+    // One line holds both when this link follows that one, or their boxes overlap vertically.
+    // ! Either test alone fails a row type; see agentic/ARCHITECTURE.md.
+    function sameLine(theirs, mine, rtl) {
+        return follows(theirs, mine, rtl) ||
+            (mine.top <= theirs.bottom + 2 && theirs.top <= mine.bottom + 2);
+    }
+
+    // What the corrections were measured against, as a string.
+    // A row that has moved under the icon since gives a different key.
+    function layoutKey(anchor, reference, container) {
+        var box = container.getBoundingClientRect();
+        var mine = anchor.getBoundingClientRect();
+        var parts = [Math.round(box.width), Math.round(mine.left - box.left),
+            Math.round(mine.top - box.top), Math.round(mine.width)];
+
+        if (reference) {
+            var theirs = reference.getBoundingClientRect();
+            parts.push(Array.prototype.indexOf.call(container.children, reference),
+                Math.round(theirs.left - box.left), Math.round(theirs.top - box.top),
+                Math.round(theirs.width), Math.round(theirs.height));
+        }
+
+        return parts.join(',');
     }
 
     function isPluginLink(anchor) {
@@ -261,14 +311,25 @@
     // Sit this icon where the row's own links sit: same gap before it, same line.
     // ! Both corrections are measured, never assumed; see agentic/ARCHITECTURE.md.
     function matchRow(anchor, container) {
-        if (anchor.hasAttribute(MATCHED_ATTR)) {
+        var mine = anchor.getBoundingClientRect();
+
+        // Not laid out yet. Leaving the attribute unset lets the next pass try again.
+        if (!mine.width && !mine.height) {
             return;
         }
 
-        var previous = anchor.previousElementSibling;
-        if (!previous) {
+        // ! Re-measured whenever the row has moved since, not once and for all.
+        // The web client settles this row over several renders; see agentic/ARCHITECTURE.md.
+        var reference = rowReference(anchor);
+        if (anchor.getAttribute(MATCHED_ATTR) === layoutKey(anchor, reference, container)) {
+            return;
+        }
+
+        if (!reference) {
             // A row holding only this link is spaced by whatever precedes it.
-            anchor.setAttribute(MATCHED_ATTR, '1');
+            anchor.style.removeProperty(GAP_VAR);
+            anchor.style.removeProperty(SHIFT_VAR);
+            anchor.setAttribute(MATCHED_ATTR, layoutKey(anchor, reference, container));
             return;
         }
 
@@ -276,26 +337,26 @@
         anchor.style.setProperty(GAP_VAR, '0px');
         anchor.style.setProperty(SHIFT_VAR, '0px');
 
-        var theirs = previous.getBoundingClientRect();
-        var mine = anchor.getBoundingClientRect();
+        var theirs = reference.getBoundingClientRect();
+        mine = anchor.getBoundingClientRect();
+        var rtl = window.getComputedStyle(container).direction === 'rtl';
 
-        // Not laid out yet. Leaving the attribute unset lets the next pass try again.
-        if (!theirs.width && !theirs.height && !mine.width && !mine.height) {
-            return;
+        // A link on the line below is spaced and centred by that line, not by this one.
+        if (sameLine(theirs, mine, rtl)) {
+            var shift = visualCentre(theirs) - visualCentre(mine);
+            if (isFinite(shift) && Math.abs(shift) <= MAX_SHIFT) {
+                anchor.style.setProperty(SHIFT_VAR, (Math.round(shift * 100) / 100) + 'px');
+            }
+
+            var target = rowGap(container, anchor);
+            if (target !== null && follows(theirs, mine, rtl)) {
+                var distance = rtl ? theirs.left - mine.right : mine.left - theirs.right;
+                var correction = target - distance;
+                anchor.style.setProperty(GAP_VAR, (correction > 0.5 ? correction : 0) + 'px');
+            }
         }
 
-        var shift = visualCentre(previous) - visualCentre(anchor);
-        if (isFinite(shift) && Math.abs(shift) <= MAX_SHIFT) {
-            anchor.style.setProperty(SHIFT_VAR, (Math.round(shift * 100) / 100) + 'px');
-        }
-
-        var target = rowGap(container, anchor);
-        if (target !== null && Math.abs(mine.top - theirs.top) <= 2) {
-            var correction = target - (mine.left - theirs.right);
-            anchor.style.setProperty(GAP_VAR, (correction > 0.5 ? correction : 0) + 'px');
-        }
-
-        anchor.setAttribute(MATCHED_ATTR, '1');
+        anchor.setAttribute(MATCHED_ATTR, layoutKey(anchor, reference, container));
     }
 
     // Exactly one separator beside the link: the one before it, or the one after when it leads.
@@ -449,7 +510,18 @@
             attributeFilter: ['class']
         });
 
+        var settle = function () {
+            SETTLE_CHECKS.forEach(function (delay) {
+                window.setTimeout(schedule, delay);
+            });
+        };
+
+        // A resize rewraps the row without touching the DOM.
+        window.addEventListener('resize', schedule);
+        window.addEventListener('hashchange', settle);
+
         schedule();
+        settle();
     }
 
     try {

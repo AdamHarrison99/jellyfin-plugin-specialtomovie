@@ -29,12 +29,15 @@ That runs both halves:
 | Script | Engine | Covers |
 | --- | --- | --- |
 | `node test.js` | jsdom | behaviour - 46 checks |
-| `node test-layout.js` | real browser | measurement and alignment - 52 checks |
+| `node test-layout.js` | real browser | measurement and alignment - 66 checks |
 
-`node measure.js` is a diagnostic rather than a test: it counts the style resolutions and forced
-layouts one upgrade pass causes, for a text row and a logo row. There is no pass or fail - compare
-two revisions by pointing it at each in turn. It found the two efficiency faults fixed after v1.0.18,
-neither of which was apparent from reading the code.
+Two diagnostics sit beside them rather than tests - neither has a pass or fail, and both are read by
+comparing two revisions:
+
+| Script | Question it answers |
+| --- | --- |
+| `node measure.js` | What does re-measuring cost? Counts style resolutions and forced layouts in one upgrade pass, for a text row and a logo row. It found the two efficiency faults fixed after v1.0.18, neither of which was apparent from reading the code. |
+| `node measure-idle.js` | Is a settled row measured again at all? Ten passes driven by a change elsewhere on the page. Style-attribute writes must be zero, or a correction that re-derives itself can oscillate on an idle page. |
 
 Both browser-driven scripts share [`browser.js`](browser.js), which prefers `STM_BROWSER`, then
 `PATH`, then the vendors' default install locations.
@@ -73,9 +76,41 @@ two measuring parts of the script are invisible to `test.js`: `iconSize`, which 
 from a link the web client rendered, and `matchRow`, which matches the row's own spacing and vertical
 centre. This half drives a real engine for those.
 
-Four scenarios: logos at 25px, logos at 36px (a fixed 25px box passes the first and fails this one,
-which is the whole reason the size is measured), a link starting mid-row so the move path runs, and a
-plain text row with no logo CSS at all.
+Four scenarios cover a row that is already finished: logos at 25px, logos at 36px (a fixed 25px box
+passes the first and fails this one, which is the whole reason the size is measured), a link starting
+mid-row so the move path runs, and a plain text row with no logo CSS at all.
+
+Four more cover a row that is **still settling**, which is where the field defect lived. They build
+the row the way the web client really does — `is="emby-linkbutton"` anchors joined with `", "`, with
+jellyfin-web's own `emby-button` rules (`display: inline-flex; vertical-align: middle`) — and then
+change it after the icon has been placed:
+
+| Scenario | What it reproduces |
+| --- | --- |
+| Row upgraded after the icon was placed | The `emby-button` class and the logo CSS land after the first measurement, changing every link's shape |
+| Hidden link directly before the icon | The sibling the icon would align to has no box, so it cannot say where the row sits |
+| Narrow row, then widened | The icon wraps to a line of its own, and must not be dragged up into the line above; widening re-measures |
+| Logo CSS arriving late, with no DOM change | The hardest case: a stylesheet restyles the row with nothing for a `MutationObserver` to see |
+
+Each of those asserts **drift**: the correction the icon is carrying, minus the correction this row
+asks for now. Zero means the icon is placed for the row as it stands; anything else is the number of
+pixels it is out by, and is exactly what a user sees. Against the v2.0.0 script all four fail.
+
+## Checking a console script
+
+A second path models a script pasted into a page that is already running: it is injected after the
+row has settled, and the checkpoints before that are printed rather than asserted, since they
+describe the script being corrected rather than the correction.
+
+```
+node test-layout.js path/to/v2.0.0/specialtomovie.js ../align-fix.js
+```
+
+That is how [`../align-fix.js`](../align-fix.js) is kept honest — 63 checks pass against a v2.0.0
+script that fails 10 of them on its own.
+
+For a report from a real server rather than a built row, paste
+[`../align-report.js`](../align-report.js) into the browser console on the detail page.
 
 **Vertical position is measured by hit-testing the painted pixels**, not by reading a rect. Neither
 kind of link in this row can be measured from its own box: a link showing a logo is an inline anchor

@@ -29,7 +29,7 @@ public class LinkedSpecialUrlProvider : IExternalUrlProvider
         _logger = logger;
     }
 
-    public string Name => "TV Special";
+    public string Name => "Linked Special";
 
     public IEnumerable<string> GetExternalUrls(BaseItem item)
     {

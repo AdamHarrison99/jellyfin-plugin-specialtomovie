@@ -38,6 +38,157 @@ technical, none personal. The only matches returned were the known-acceptable on
 ---
 ---
 
+## Fix: 2026-09-10 (Session 21 — Cross-link icon measured once, post-v2.0.0)
+
+**Scope**: one field defect and its fix, a caption rename, and the nine-step audit over the result.
+Steps 4-7 were read over the changed surface — `Web/specialtomovie.js`, the two providers,
+`configPage.html` and the new tooling — rather than the whole tree, which Session 20 covered.
+
+| Step | Outcome |
+| --- | --- |
+| 1 Build | `dotnet build -c Release` — 0 errors, 0 warnings |
+| 2 Harnesses | `audit-harness` 21/21, `test.js` 46/46, `test-layout.js` 66/66 |
+| 3 Comment lint | clean, 70 files |
+| 4 Security | nothing new reaches a URL, HTML attribute or the filesystem. `layoutKey` writes rounded integers through `setAttribute`, never markup |
+| 5 Efficiency | one finding, accepted. See costs below |
+| 6 Concurrency | one finding, fixed — unbounded timer array in `align-fix.js` |
+| 7 Filesystem/API | untouched by this change; providers changed one string literal each |
+| 8 Sweeps | both clean. See the PII and scratchpad lines below |
+| 9 Write-up | this entry |
+
+**Reported**: on one special the icon sat a few pixels low on desktop and after a refresh on mobile,
+and sat high on the first in-app load. Movie pages were always right. No other item reproduced it.
+
+### Finding (fixed): the row was measured once, and the row is not finished when it is first drawn
+
+`matchRow` set `data-stm-matched` after its first successful measurement and read it as "done"
+forever. The row it measures is assembled in stages: jellyfin-web renders plain anchors and adds its
+own `emby-button` class when it upgrades the element — that class carries
+`display: inline-flex; vertical-align: middle`, so a link's box changes shape when it lands — a
+user's logo CSS can apply later still, and Jellyfin-Enhanced appends links after an API call. A
+correction measured inside that window is wrong for the row that follows it, in either direction,
+and nothing re-measured.
+
+Why it looked item-specific and Seerr-related: Jellyfin-Enhanced adds its Seerr link only for
+`Movie` and `Series` items (`seerr-detail-link.js`), and Letterboxd links only for movies and
+people. On a movie page that late insertion moves our icon back to the end of the row, which clears
+the flag and forces a fresh measurement on a settled row — so movie pages self-corrected. A special
+is an episode: nothing arrives late, so whichever moment the first measurement landed in is the one
+it keeps. The item was never the variable; the timing was.
+
+**Fixed** in `Web/specialtomovie.js`:
+
+- `data-stm-matched` holds a **key** rather than a flag — container width, the icon's own box, and
+  the identity and box of the link it was measured against. A pass computing a different key
+  measures again. The key is stored after the corrections are applied, so a stable row settles.
+- The reference is the nearest preceding element the row actually **draws**. A hidden neighbour, or
+  one an installed logo pack has no rule for, has no box: measuring against it yielded a correction
+  the size of the distance to the viewport top, which the sanity limit discarded, leaving the icon
+  uncorrected in a row that needed a correction.
+- A correction is taken only from a link on the **same line** — the icon follows it along the line,
+  or their boxes overlap vertically. Each test alone fails a row type. A wrapped icon on a narrow
+  phone was being dragged up into the line above by up to `MAX_SHIFT`.
+- `resize` and a short settle series (400ms, 1.2s, 3s after arriving on a page) trigger a pass. A
+  stylesheet arriving late restyles the row with nothing for the observer to see.
+- The gap guard compared the top edges of two differently shaped boxes, so on a row whose links are
+  `inline-flex` the spacing correction never ran at all. It now uses the same-line test.
+
+### Verification
+
+| Check | Result |
+| --- | --- |
+| `webclient-harness/test.js` (jsdom) | 46/46 |
+| `webclient-harness/test-layout.js` (Edge) | 66/66 — four new scenarios, 14 new checks |
+| Same harness against the **v2.0.0** script | 56/66 — the 10 failures are exactly the new checks |
+| Same harness, v2.0.0 + `align-fix.js` pasted late | 63/63, from rows 5.5px, 32px, 3.5px and 7.7px out |
+| `audit-harness` | 21/21 |
+| `dotnet build -c Release` | succeeded, 0 warnings |
+| `check-comments.mjs .` | clean, 70 files |
+
+The new scenarios build the row as the web client really does (`is="emby-linkbutton"` anchors joined
+with `", "`, under jellyfin-web's own `emby-button` rules) and then change it after the icon has been
+placed: the element upgrade plus logo CSS, a hidden link directly before the icon, a wrap on a narrow
+viewport followed by a widen, and a stylesheet arriving with no DOM change at all. Each asserts
+**drift** — the correction carried, minus the correction the row asks for now — which is the number
+of pixels the user sees the icon out by.
+
+**Cost** (`measure.js`, and the new `measure-idle.js`): computing the key adds about five box reads
+to a pass on a visible detail page. Ten passes over a settled row produce **zero** style writes, so a
+stable row is still measured exactly once and the key cannot oscillate. On the measure.js scenario,
+which appends to the row every pass and so re-measures every pass by design, a pass costs 35 box
+reads against 24 before.
+
+### Finding (fixed): `align-fix.js` grew its timer array without bound
+
+Step 6. Each `hashchange` armed three more settle checks and pushed them onto an array that was only
+ever read by `stop()`. A console tool outlives many navigations, so the array grew for as long as it
+ran, and a previous page's checks stayed queued behind the current page's. `settle()` now clears the
+outstanding batch before arming the next, which is also the correct behaviour: the page that
+superseded them no longer wants them. The shipped script arms the same checks without tracking them,
+so it never had the array and needed no change.
+
+### Finding (accepted): `rowReference` walks siblings without a cap
+
+Step 5. `isHidden` bounds its walk at `MAX_HIDDEN_HOPS` because it climbs ancestors, and the comment
+there warns that an unbounded walk runs per link per pass. `rowReference` walks **siblings inside the
+links row**, so it is already bounded by that row's child count, and it stops at the first drawn one —
+normally the first hop. A cap would buy nothing and would return `null` on a legitimately long row,
+dropping the correction entirely. Left uncapped deliberately.
+
+**Not fixed, by design**: where a hidden link leaves its `", "` separators behind, the gap before the
+icon is two separators wide. The row's text is the web client's, not ours to edit, so the correction
+can only push the icon out, never pull it in. Pinned by the harness as "not spaced tighter than the
+settled row".
+
+### Caption rename
+
+`Movie Version` → **`Linked Movie`** and `TV Special` → **`Linked Special`**, in both
+`IExternalUrlProvider`s. The captions are also the icon's tooltip and accessible name, which the
+client script copies from the anchor. Updated in `Configuration/configPage.html` (whose description
+also still claimed the link "Displays as a badge when appropriate" — badge detection was removed in
+v2.0.0), `HANDOFF.md`, `IDEAS.md` and the harness fixtures. `README.md` does not name the captions,
+so it needs no change.
+
+### New tools
+
+[`agentic/tools/align-report.js`](tools/align-report.js) — a browser-console report for the same
+question on a **live** server, where the row carries the install's own theme, logo CSS and plugins.
+Written for this diagnosis and promoted out of the scratchpad rather than thrown away.
+
+[`agentic/tools/align-fix.js`](tools/align-fix.js) — places the icon from the console on a server
+running a build whose own placement is wrong, so the fix can be confirmed on the reporter's real row
+before a build ships. It carries the same rules as `Web/specialtomovie.js` and must change with it.
+
+[`webclient-harness/measure-idle.js`](tools/webclient-harness/measure-idle.js) — the steady-state
+half of the cost question `measure.js` cannot ask, and the source of the zero-writes figure above.
+
+`test-layout.js` takes an optional second path, a script pasted after the row has settled. Against
+the v2.0.0 script — which fails 10 of its own checks — `align-fix.js` passes **63/63**, correcting a
+row found 5.5px, 32px and 7.7px out in the three settling scenarios.
+
+**PII Sweep**: all five documented checks, over 75 files — every tracked file plus the three
+untracked new tools. **Clean.** Checks 1, 3 and 4 returned only known-acceptable matches: Jellyfin's
+own install paths in `README.md`, the vendors' default browser paths in `browser.js`, the project's
+GitHub owner handle, the sweep patterns in `CLAUDE.md` matching themselves, and assembly versions for
+the dotted-quad check. Check 2 (e-mail) returned nothing. Check 5 read every comment line in the
+changed published source: all technical, none personal. The only `:8096` in the tree is the harness's
+literal `host:8096` fixture. Neither console tool takes a path; `align-report.js` prints
+`(this server)` in place of the address it runs on and strips the query, and so the item id, from the
+page it names. One absolute workspace path was found and removed from the steady-state probe as it
+was promoted — it had been written against the scratchpad copy.
+
+**Scratchpad Sweep**: three reusable things were found parked outside the repository and
+**promoted** — the console placement fix (`tools/align-fix.js`), the steady-state cost probe
+(`webclient-harness/measure-idle.js`), and a forked copy of the layout harness, which became the
+optional second argument on `test-layout.js` rather than a second copy of it. Deleted: two superseded
+one-off diagnostic probes and the concatenated script built to test the pair together. What remains
+is third-party reference material only (jellyfin-web and Jellyfin-Enhanced sources, and the released
+script, recoverable with `git show`); no server binaries, library data, configuration or logs were
+present at any point.
+
+---
+---
+
 ## Audit: 2026-09-09 (Session 20 — Cross-link icon rebuild, comment lint adopted, post-v1.0.19)
 
 **Scope**: the full nine-step audit over the whole tree. `Web/specialtomovie.js` was rewritten
