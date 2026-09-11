@@ -38,6 +38,93 @@ technical, none personal. The only matches returned were the known-acceptable on
 ---
 ---
 
+## Audit: 2026-09-11 (Session 22 — Config page hints, legends and select wrappers, post-v2.0.0)
+
+**Scope**: the uncommitted config-page batch — the `emby-select` wrappers, the reworked Force Links
+and Ignore List format hints, the Jellyfin item ID note, the column-legend spacers — plus the two new
+console tools. No `.cs` file changed in this batch, so steps 5-7 are recorded as read rather than as
+reviews of new logic. Steps 4-7 were read over the changed surface; Session 20 covered the tree.
+
+| Step | Outcome |
+| --- | --- |
+| 1 Build | `dotnet build -c Release` — 0 errors, 0 warnings |
+| 2 Harnesses | `audit-harness` 21/21, `test.js` 46/46, `test-layout.js` 66/66; `configpage-selects.js` 4/4 under both arrow modes |
+| 3 Comment lint | clean, 72 files |
+| 4 Security | no new sink. The batch adds static markup and static placeholder strings; nothing request-derived reaches an attribute, a URL or the filesystem. The new tools run offline over a local file and build their one element from a literal |
+| 5 Efficiency | three wrapper `div`s and one extra class; no logic touched. `Web/specialtomovie.js` unchanged, so `measure.js` was not re-run |
+| 6 Concurrency | nothing async changed. `configpage-arrow-fix.js` is re-entrant: a second paste undoes the first before re-wrapping |
+| 7 Filesystem/API | untouched. Both new tools take their path as an argument, default to a repo-relative one, and write nothing |
+| 8 Sweeps | both clean — 77 files swept, scratchpad emptied. See below |
+| 9 Write-up | this entry |
+
+**Finding 1 — the worked example was not true (MEDIUM, config UI).** The placeholders introduced
+earlier in the batch read as one mapping: `Breaking Bad S00E01` -> `El Camino (2019)`. Queried live
+against the TheTVDB v4 API, Breaking Bad (series 81189) has 18 specials — the 2009 minisodes, the
+2010 Better Call Saul shorts, and "Snow Globe" (2020). **El Camino is not among them, and S00E01 is
+"Good Cop / Bad Cop".** The `S00E63 - El Camino.mkv` in the original plan document is an
+illustrative filename, not provider data, and leaning on it is how the wrong pair was reached.
+**Fixed**: `Firefly S00E01` -> `Serenity (2005)`, which TheTVDB (series 78874) does carry as special
+number one — a genuine theatrical film listed as a season 0 episode, which is the case this plugin
+exists for. Rejected alternatives, also checked live: Downton Abbey (193131) carries its films at
+S00E12/E18/E19 but is less widely known; Sherlock's "The Abominable Bride" (S00E09) is a TV special;
+SpongeBob and Dragon Ball Z do not list their films in season 0 at all.
+
+The movie legend's provider IDs were briefly replaced with real verified values
+(`tt9243946 · tmdb:559969 · tvdb:131199`) and **reverted at the user's instruction** — a real ID in a
+legend invites copying it verbatim into a mapping it does not fit, where templates cannot be. The
+`tvdb:` form itself was confirmed usable: TheTVDB does publish numeric movie IDs even though its
+movie URLs are slugs, and `HardLinkService` writes `uniqueid type="tvdb"`, so plugin-created movies
+carry one.
+
+**Finding 2 — a column legend's spacer was not the control it stood in for (LOW, cosmetic,
+pre-existing).** Each list section heads its rows with a flex legend ending in a `visibility: hidden`
+Remove button that reserves the real button's column. All three were unclassed, so they took the
+host theme's default button metrics rather than `.mapping-remove` / `.forcelink-remove` /
+`.ignore-remove` (`0.85em`, `2px 6px`, 1px border). Measured on the bare page the drift is 66px
+against 65px; under a server's own stylesheet the default button is styled and the gap is larger.
+Pre-existing in library mappings and force links, and the batch had copied it into the new ignore
+legend. **Fixed** in all three by giving the spacer the row control's class, which makes the widths
+equal by construction; `aria-hidden` was added at the same time. Re-measured: 65px against 65px in
+every section. No harness check was added, because sharing the class removes the way they could
+drift.
+
+**Finding 3 — `configpage-selects.js` could not run from its own location (MEDIUM, tooling).** It
+required `playwright-core` directly, but that dependency is installed under
+`webclient-harness/node_modules`, and Node resolves from the requiring file's directory upward —
+there is no `node_modules` beside the tool. It threw `MODULE_NOT_FOUND` from the repository root and
+from `agentic/tools`. A verification tool that only runs from one undocumented directory is worth
+nothing at the next release. **Fixed**: it resolves `playwright-core` through the harness that owns
+it, and exits 2 with the `npm install` instruction when that is missing. It now runs from anywhere,
+and `tools/README.md` records the dependency.
+
+**Finding 4 — `HANDOFF.md` stated the wrong current version (LOW, documentation).** Line 9 read
+`1.0.17.0` while `.csproj`, `build.yaml` and `manifest.json` all read `2.0.0.0` — stale since the
+v2.0.0 release commit, in the one file that is meant to be read first in a new session, and in the
+same sentence that tells the reader to check all three before assuming. **Fixed** to `2.0.0.0`.
+
+**Finding 5 — the config page had no design notes anywhere (LOW, documentation).** The page cannot
+carry the rationale itself: the comment lint bans `/* */` blocks, and long rationale belongs in
+`ARCHITECTURE.md` by the same rule. Nothing recorded why three `div`s wrap three selects or why a
+hidden button sits in a legend, both of which read as clutter to a future editor. **Fixed**: a
+`The config page` section was added to `ARCHITECTURE.md` covering the containing-block requirement,
+the spacer rule, and the requirement that a named example be checked against the provider.
+
+**PII sweep — clean.** All 77 files in scope: every tracked file plus the two new untracked tools.
+Checks 1-4 returned only entries already on the known-acceptable table (Jellyfin's own install paths,
+the vendors' default browser locations, the project's GitHub handle, four-part version numbers, and
+the sweep patterns matching their own documentation). No email addresses. Check 5 was read over the
+259 comment lines in published source: all technical, none personal. The two new tools carry no path,
+host or identity — both take the page under test as an argument and default to a repo-relative path.
+
+**Scratchpad sweep — emptied, nothing promoted.** It held three pieces of third-party Jellyfin web
+source, a copy of the released `specialtomovie.js` kept for comparison, and the one-off probe written
+for Finding 2. None is reusable tooling: the first four are re-creatable from their sources and from
+git history, and the probe's invariant is now structural rather than measured. All deleted.
+
+**Verification after the fixes**: build 0/0; `audit-harness` 21/21; `test.js` 46/46;
+`test-layout.js` 66/66; comment lint clean over 72 files; `configpage-selects.js` 4/4 under
+`STM_ARROW_MODE=after` and `end`.
+
 ## Fix: 2026-09-10 (Session 21 — Cross-link icon measured once, post-v2.0.0)
 
 **Scope**: one field defect and its fix, a caption rename, and the nine-step audit over the result.
@@ -53,6 +140,7 @@ Steps 4-7 were read over the changed surface — `Web/specialtomovie.js`, the tw
 | 5 Efficiency | one finding, accepted. See costs below |
 | 6 Concurrency | one finding, fixed — unbounded timer array in `align-fix.js` |
 | 7 Filesystem/API | untouched by this change; providers changed one string literal each |
+| Follow-up | a field report on the config page, diagnosed and fixed after the audit — see the select-chevron finding |
 | 8 Sweeps | both clean. See the PII and scratchpad lines below |
 | 9 Write-up | this entry |
 
@@ -134,6 +222,69 @@ there warns that an unbounded walk runs per link per pass. `rowReference` walks 
 links row**, so it is already bounded by that row's child count, and it stops at the first drawn one —
 normally the first hop. A cap would buy nothing and would return `null` on a legitimately long row,
 dropping the correction entirely. Left uncapped deliberately.
+
+### Finding (fixed): three filter selects lost their chevron to the page's corner
+
+Reported from the running v2.0.0 as "an arrow in the top right of the settings page that does
+nothing". It was three arrows stacked, not one. Jellyfin's `emby-select` draws each select's chevron
+in a `.selectArrowContainer`, which is `position: absolute`; the three Linked Pairs filter selects
+were direct children of a plain flex row, so the arrows had no positioned ancestor, resolved against
+the page instead, and piled onto its top-right corner. `selectPrimaryProvider` was unaffected because
+it already sits in Jellyfin's `.selectContainer`, which is `position: relative`.
+
+The symptom read as a stray control, but deleting the arrows was the wrong fix: those three filters
+were left with no dropdown affordance at all, since `emby-select` suppresses the native one. Each
+select is now wrapped in `.pairs-select-wrapper`, the same `position: relative; display: inline-block`
+idiom the page already uses for `.pairs-menu-wrapper`, so every arrow returns to its own control.
+Every reference to those selects is `getElementById`, so the added wrapper changes no script.
+
+Diagnosed from a console report on the live page rather than by reading markup: the page renders
+nothing in that corner on its own, and the arrows only exist once Jellyfin's component has upgraded
+the selects.
+
+Two tools came out of it. [`tools/configpage-selects.js`](tools/configpage-selects.js) builds the
+arrow the way `emby-select` does and fails any select whose parent is static: 1 of 4 held its arrow
+before the fix, 4 of 4 after. [`tools/configpage-arrow-fix.js`](tools/configpage-arrow-fix.js)
+applies the same wrapping from the console, so the fix was confirmed on the reporter's own server
+before shipping; the checker takes it as a second argument and scores the released page 4 of 4 with
+it pasted.
+
+The ignore list's format description was reflowed in the same pass, onto the two-line layout the
+Force Links section already uses: one line per accepted target, matching what `IsIgnored` accepts.
+
+### Finding (hints fixed, parsing left strict by decision): quoted entries never match
+
+Nothing in the codebase strips quotes from a config entry, but every format hint on the page showed
+its example in double quotes, which invites typing them. A quoted entry fails in three ways:
+`IsIgnored` trims whitespace only and compares exactly, so the entry is silently inert; a force-link
+episode key is not trimmed at all on the dictionary-lookup path; and `ParseForcedMovie` tests
+`StartsWith("tt")` against a string beginning with `"`, so a quoted IMDb or TMDB id falls through to
+the title branch and becomes a **title search for the quoted id** rather than failing. A quoted
+`Title (Year)` also loses its year, since the year branch requires `EndsWith(')')`.
+
+The quotes were removed from all four hints. Parsing was deliberately **not** made tolerant:
+`EnforceIgnoreList` removes matching pairs and, with auto-delete enabled, calls
+`LinkedItemDeleter.DeleteWithFiles`. Stripping quotes would make an ignore entry that is dormant
+today match on the next scan, removing the pair and deleting the linked movie for anyone who had
+typed quotes. Force links carry no such path, but were left strict too so the two behave alike.
+
+**User decision: hints only.** Anyone who already typed quotes stays unmatched, with a
+"Force link episode not found" debug line as the only signal.
+
+The hints were then made actionable rather than merely unquoted. Each input's placeholder carries a
+real example in place of a category name, since a template like `SeriesName S00E##` or `tt[ID]`
+invites typing the `##` or the brackets literally -- which fails exactly as silently as the quotes
+did.
+
+The first pair chosen, `Breaking Bad S00E01` / `El Camino (2019)`, was wrong: queried live, TheTVDB
+lists no El Camino among Breaking Bad's specials, and S00E01 there is the minisode "Good Cop /
+Bad Cop". The pair is now `Firefly S00E01` / `Serenity (2005)`, which TheTVDB does carry as special
+number one -- a series whose special genuinely is a theatrical film, which is the case this plugin
+exists for. An example on a page that teaches a format has to be checked against the provider, not
+recalled: the provider IDs in the movie legend stay templates for the same reason. Both sections also now say where an item ID comes
+from: the `id=` value in the address bar, which is the shape `parseLink` in the client script parses.
+Neither the config page nor `README.md` had said so anywhere, so "or Jellyfin Item ID" named a format
+the user had no way to produce.
 
 **Not fixed, by design**: where a hidden link leaves its `", "` separators behind, the gap before the
 icon is two separators wide. The row's text is the web client's, not ours to edit, so the correction

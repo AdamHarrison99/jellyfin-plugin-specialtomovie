@@ -434,3 +434,36 @@ restart. **`EnableClientScript` controls only the injection** of the client scri
 cross-links still work, but render as plain text and open a new tab.
 
 `LibraryMapping` maps one source TV library to one destination movie library for hard link placement.
+
+## The config page — `Configuration/configPage.html`
+
+The page carries no comments of its own: the comment lint bans `/* */` blocks, and the rationale
+belongs here anyway. Two traps in it look like clutter and are not.
+
+**Every `<select is="emby-select">` must sit in a positioned parent.** Jellyfin's `emby-select`
+upgrade draws the chevron in a `.selectArrowContainer` of its own, `position: absolute`, and an
+absolutely positioned box resolves against its nearest positioned ancestor. A select in a plain flex
+row has none, so its arrow escapes to the page's top-right corner, where it reads as a stray control
+that does nothing -- three of them stacked there in v2.0.0. Jellyfin's own `.selectContainer` is
+`position: relative`, which is why the selects the page inherits from Jellyfin never showed this.
+The three Linked Pairs filters each sit in a `.pairs-select-wrapper` for that reason. Do not
+unwrap them; [`tools/configpage-selects.js`](tools/configpage-selects.js) fails if one is unwrapped,
+and [`tools/configpage-arrow-fix.js`](tools/configpage-arrow-fix.js) repairs a running server's page
+from the console.
+
+**A column legend's hidden spacer carries the same class as the control it stands in for.** Each
+list section (library mappings, force links, ignore list) heads its rows with a flex legend whose
+last child is a `visibility: hidden` Remove button, there only to reserve the column the real button
+occupies. Unclassed, it takes the host theme's default button metrics instead of the row's
+(`.mapping-remove` / `.forcelink-remove` / `.ignore-remove`: `0.85em`, `2px 6px`, a 1px border), and
+the legend drifts out of line with the rows by however much the two disagree -- invisibly on the
+bare page, by more under a server's stylesheet. The spacer matching the row's class makes the widths
+equal by construction rather than by coincidence.
+
+**The format hints are real examples, not templates** (`Firefly S00E01` -> `Serenity (2005)`). A
+placeholder like `SeriesName S00E##` invites typing the `##` literally, which fails as silently as
+every other malformed entry, since nothing in `IsIgnored` or `ParseForcedMovie` reports an entry it
+did not match. An example naming a real series has to be checked against the provider before it
+ships: the first pair used here was `Breaking Bad S00E01` -> `El Camino (2019)`, and TheTVDB lists
+no El Camino among Breaking Bad's specials at all. Provider IDs stay templated (`tt[ID]`,
+`tmdb:[Movie ID]`) because a real ID there would be copied verbatim into a mapping it does not fit.
