@@ -437,8 +437,9 @@ cross-links still work, but render as plain text and open a new tab.
 
 ## The config page — `Configuration/configPage.html`
 
-The page carries no comments of its own: the comment lint bans `/* */` blocks, and the rationale
-belongs here anyway. Two traps in it look like clutter and are not.
+The page's inline script is held to the same comment rule as the rest of the source -- the lint
+reads the `<script>` bodies of an `.html` file -- so its rationale lives here. Two traps in its
+markup look like clutter and are not.
 
 **Every `<select is="emby-select">` must sit in a positioned parent.** Jellyfin's `emby-select`
 upgrade draws the chevron in a `.selectArrowContainer` of its own, `position: absolute`, and an
@@ -467,3 +468,18 @@ did not match. An example naming a real series has to be checked against the pro
 ships: the first pair used here was `Breaking Bad S00E01` -> `El Camino (2019)`, and TheTVDB lists
 no El Camino among Breaking Bad's specials at all. Provider IDs stay templated (`tt[ID]`,
 `tmdb:[Movie ID]`) because a real ID there would be copied verbatim into a mapping it does not fit.
+
+**Removing pairs: the confirmation promises only what the server will do.** Three rules in
+`removeSelectedPairs` and the state behind it:
+
+- `autoDeleteOnRemoval` holds the *saved* "Remove plugin managed items automatically" setting. It is
+  set on load and after a successful save, and never from the live checkbox. The server gates
+  deletion on the same stored value (see "Deletion and the `ItemRemoved` cascade" above), so a page
+  that followed the unsaved checkbox would promise a deletion the server then refuses.
+- The count of items to delete covers only plugin-created movies that exist as items. A pre-existing
+  movie is the user's own library item, which the server will not delete whatever the request says,
+  and a pair still in dry run has no movie item yet. With none to delete, the prompt falls back to
+  the pairs-only wording even when auto-delete is on.
+- Cancel always means cancel: nothing is removed and nothing is deleted. Confirming removes the
+  pairs, and with auto-delete on also deletes their plugin managed movie items and files; with it
+  off it removes the pairs only, and the prompt says the files stay on disk.

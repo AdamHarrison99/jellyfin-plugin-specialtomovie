@@ -137,7 +137,8 @@ node agentic/tools/check-comments.mjs .
 ```
 
 Must print `clean`. **Everything outside `agentic/` is in scope** — `agentic/` is the only exempt
-directory, since those files are working notes rather than shipped code.
+directory, since those files are working notes rather than shipped code. The inline `<script>`
+bodies of `.html` pages count as source; the config page carries its whole script that way.
 
 The rule the linter enforces is that a comment is a short note making the next line readable: at most
 two adjacent lines, 100 characters a line, 180 across a run, two sentences, no rationale connectives

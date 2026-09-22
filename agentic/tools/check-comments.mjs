@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 /*
- * Enforces the comment rule and the no-out-of-repo-references rule in AGENT-HANDOFF.md.
+ * Enforces the comment rule from agentic/CLAUDE.md (Pre-Release Audit, step 3), and rejects
+ * published references to documents that are not in the repository.
  *
- * Comment rules apply to source under Jellyfin.Plugin.AutoSubSync/ only. agentic/ is exempt —
- * those comments are working notes and may be as long as they are useful. The out-of-repo
- * reference check is likewise published-only, since that is the tree people clone.
+ * Comment rules apply to everything outside agentic/, including the inline <script> bodies of an
+ * HTML page. agentic/ is exempt — those comments are working notes and may be as long as they are
+ * useful. The out-of-repo reference check is likewise published-only, since that is the tree
+ * people clone.
  *
  * A comment is a note that makes the next line readable. Anything larger is documentation and
  * belongs in agentic/ARCHITECTURE.md. Enforced as:
@@ -68,6 +70,9 @@ const STOPWORDS = new Set([
 const SOURCE_EXT = new Set(['.cs', '.mjs', '.js', '.ts', '.ps1', '.py']);
 const TEXT_EXT = new Set(['.md', '.html', '.json', '.yaml', '.yml']);
 
+// Pages that carry their script inline. Their <script> bodies are source like any other.
+const HTML_EXT = new Set(['.html']);
+
 // agentic/ ships with the repo but is not the plugin. Everything outside it is.
 const AGENT_DIR = 'agentic';
 
@@ -85,7 +90,26 @@ function hasExt(path, set) {
 }
 
 const isSource = (path) => hasExt(path, SOURCE_EXT);
+const isHtml = (path) => hasExt(path, HTML_EXT);
 const isScanned = (path) => isSource(path) || hasExt(path, TEXT_EXT);
+
+// An HTML page reduced to its inline <script> bodies. Every other line is blanked, not dropped,
+// so line numbers and the changed-lines map still line up with the file on disk.
+// Not a parser: code sharing a line with its <script> or </script> tag is skipped.
+function scriptBodies(text) {
+  let inScript = false;
+  return text.split('\n').map((line) => {
+    if (inScript) {
+      if (/<\/script\s*>/i.test(line)) {
+        inScript = false;
+        return '';
+      }
+      return line;
+    }
+    if (/<script\b[^>]*>/i.test(line) && !/<\/script\s*>/i.test(line)) inScript = true;
+    return '';
+  }).join('\n');
+}
 
 function walk(dir, out = []) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -312,8 +336,11 @@ function check(file, only) {
   // agentic/ is working notes for an agent, not shipped code. Only the plugin is audited.
   const published = !(rel === AGENT_DIR || rel.startsWith(AGENT_DIR + '/'));
 
+  // A page's markup and styles are not comment-checked; its script is.
+  const source = isSource(file) ? text : isHtml(file) ? scriptBodies(text) : null;
+
   const violations = [
-    ...(isSource(file) && published ? checkComments(text, only) : []),
+    ...(source !== null && published ? checkComments(source, only) : []),
     ...checkDocRefs(rel, text, only),
   ];
 

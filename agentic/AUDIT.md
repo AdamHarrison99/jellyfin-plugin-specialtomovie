@@ -29,6 +29,7 @@ and each finding with its resolution. A clean sweep is still recorded.
 | Four-part dotted versions (`1.0.16.0`, `12.0.0.0`, `10.11.11.0`) | throughout | Assembly and ABI versions, not IP addresses. These dominate the dotted-quad check. |
 | The sweep patterns matching themselves | `agentic/CLAUDE.md` | The documented regexes match their own documentation. |
 | Default Edge and Chrome install locations | `agentic/tools/webclient-harness/browser.js` | The vendors' own default paths, identical on every machine of that OS and not read from this one. They are the **last** resort in the lookup, after `STM_BROWSER` and `PATH`, and are confined to that one file so no other tool repeats them. |
+| Backslash escapes matching the UNC pattern (`\\c`, `\\b`) | `agentic/tools/audit-harness/Program.cs`, `agentic/tools/check-comments.mjs` | A path-traversal test input and a regex under construction. Neither is a path on any machine. |
 
 **Baseline — 2026-08-20**: first full sweep, all 43 tracked files, run in both Git Bash and
 PowerShell. **Clean.** No absolute developer paths, machine names, share names, email addresses, or
@@ -37,6 +38,67 @@ technical, none personal. The only matches returned were the known-acceptable on
 
 ---
 ---
+
+## Audit: 2026-09-22 (Session 23 — Pre-release audit for v2.0.1)
+
+**Scope**: the tree at `9da264a` — everything since v2.0.0, which is the Session 21 re-measure fix,
+the Session 22 config page batch, and `agentic/memory/` leaving version control. No shipped file
+changed after Session 22, so steps 4-7 re-read the shipped delta since v2.0.0 rather than new logic.
+Planned release: `2.0.1.0` (third position; fixes and polish only). `targetAbi` stays `12.0.0.0`.
+
+| Step | Outcome |
+| --- | --- |
+| 1 Build | `dotnet build -c Release` — 0 errors, 0 warnings |
+| 2 Harnesses | `audit-harness` 21/21, `test.js` 46/46, `test-layout.js` 66/66. `Web/specialtomovie.js` unchanged since Session 21, so `measure.js` was not re-run |
+| 3 Comment lint | clean, 72 files — after Finding 1's fix brought the config page's script into scope, where it found six violations |
+| 4 Security | no new sink. The providers' `Name` changes are literals. `matchRow` writes only rounded pixel values to two custom properties and a numeric key to `data-stm-matched` |
+| 5 Efficiency | `resize` and the three `hashchange` settle timers all feed `schedule`, which coalesces, so a burst costs one pass. The settle timers are one-shot and not retained |
+| 6 Concurrency | `data-stm-matched` is outside the observer's `attributeFilter` (`class`), so a pass cannot retrigger itself. No `.cs` logic changed |
+| 7 Filesystem/API | untouched since v2.0.0. The config page diff is static markup: three wrappers and re-indented `option` lists |
+| 8 Sweeps | PII clean over 61 tracked files; scratchpad emptied. See below |
+| 9 Write-up | this entry. `README.md` checked against the delta: no discrepancies |
+
+**Finding 1 — the comment lint never read the config page's script (MEDIUM, tooling).**
+`check-comments.mjs` applies the comment rules to `SOURCE_EXT` only. `.html` sits in `TEXT_EXT`, which
+gets the out-of-repo reference check alone — yet `configPage.html` carries the page's whole script
+inline, 982 of its 1453 lines. Step 3's "everything outside `agentic/`" has never covered it. Linting
+the extracted script as JavaScript gives six violations in three runs, each over both the run and the
+length limit: lines 779-782 (four lines, 296 characters), 1103-1105 (three, 220) and 1111-1113
+(three, 215). All three predate the lint and survived its adoption unseen. **Fixed**: the linter
+now reads the `<script>` bodies of an `.html` file as source, blanking every other line so line
+numbers and the changed-lines map still hold. Before any comment was touched it reported exactly the
+six violations above, at those lines. The three rationales moved to `ARCHITECTURE.md` -> "The config
+page" -> "Removing pairs", and each comment is now a one- or two-line note, two of them pointing
+there. `CLAUDE.md` step 3 and `tools/README.md` now state the `<script>` scope.
+
+**Finding 2 — the linter's header describes another project (LOW, tooling doc).** The header comment
+of `check-comments.mjs` names a handoff file and a source directory that do not exist in this
+repository, carried over from where the tool was first written. `agentic/` is exempt from the lint, so
+nothing caught it. **Fixed**: the header cites `CLAUDE.md` step 3 and states the scope.
+
+**Finding 3 — the PII scope lines still name `agentic/memory/` (LOW, documentation).** `CLAUDE.md`
+step 8 and this file's standing check both list it, and it is untracked as of `9da264a`. Harmless:
+the sweep runs over `git ls-files`, which already excludes it. Left unchanged.
+
+**Finding 4 — `ARCHITECTURE.md` said the config page had no comments (LOW, documentation).** "The
+config page" opened by stating the page carries no comments of its own; its script carried fifteen
+comment lines, the three runs above among them. **Fixed**: the opening now says the script is linted like any other
+source and that its rationale lives in that section.
+
+**PII sweep — clean.** All 61 tracked files. Checks 1-4 returned the known-acceptable entries plus
+two escape-sequence matches for the UNC pattern, now added to the table: a traversal test input in
+`audit-harness/Program.cs` and a regex built in `check-comments.mjs`. No email addresses. The identity
+check matched only the project's GitHub handle. Every dotted quad is a version. Check 5 read all 259
+comment lines in published source: all technical, none personal.
+
+**Scratchpad sweep — emptied, nothing promoted.** This session's scratchpad held one probe, the config
+page's script extracted for Finding 1; deleted, since the reusable form of it is the linter change
+Finding 1 made. Scratch directories left by earlier sessions are empty.
+
+**Verification after the fixes**: build 0/0; `audit-harness` 21/21; `test.js` 46/46;
+`test-layout.js` 66/66; comment lint clean over 72 files whole-tree, and clean in changed-lines mode
+against `HEAD`; `configpage-selects.js` 4/4 under `STM_ARROW_MODE=after` and `end`. The new and
+edited text was read for the PII sweep: none.
 
 ## Audit: 2026-09-11 (Session 22 — Config page hints, legends and select wrappers, post-v2.0.0)
 

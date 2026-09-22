@@ -776,10 +776,8 @@
                 sortAsc: false,
                 selectedPairIds: new Set(),
 
-                // The *saved* "Remove plugin managed items automatically" setting — updated on load
-                // and after a successful save, deliberately not from the live checkbox. The server
-                // gates deletion on the same stored value, so tracking the unsaved checkbox here
-                // would promise a deletion the server would then refuse.
+                // ! The saved setting, never the live checkbox: the server decides on the same value.
+                // See agentic/ARCHITECTURE.md, "The config page".
                 autoDeleteOnRemoval: false,
 
                 loadPairs: function () {
@@ -1100,17 +1098,14 @@
                     var ids = Array.from(SpecialToMovieConfig.selectedPairIds);
                     if (ids.length === 0) return;
 
-                    // Only plugin-created movies that actually exist as items can be deleted: a
-                    // pre-existing movie is the user's own library item (and the server ignores the
-                    // flag for those anyway), and a pair still in dry run has no item yet.
+                    // Plugin-created movies that exist as items. Never a pre-existing movie or a dry run pair.
                     var managed = SpecialToMovieConfig.allPairs.filter(function (p) {
                         return SpecialToMovieConfig.selectedPairIds.has(p.Id) &&
                             !p.IsExistingMovie && p.MovieItemId;
                     }).length;
 
-                    // Cancel always means cancel: nothing is removed and nothing is deleted. With
-                    // auto-delete on, confirming removes the pairs and their plugin managed movie
-                    // items together; with it off, confirming removes the pairs only.
+                    // ! Cancel is a full no-op; confirming deletes media only when auto-delete is on.
+                    // See agentic/ARCHITECTURE.md, "The config page".
                     var deleteMedia = SpecialToMovieConfig.autoDeleteOnRemoval && managed > 0;
                     var msg = deleteMedia
                         ? 'Remove ' + ids.length + ' selected pair(s) from the database and delete the ' +
