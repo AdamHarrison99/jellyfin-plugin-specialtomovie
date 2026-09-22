@@ -281,7 +281,7 @@ absolute path.
 ## Memory
 
 Project conventions — any standing rule or constraint about how this codebase is worked on — are
-written as files in [`memory/`](memory/). **Read [`memory/MEMORY.md`](memory/MEMORY.md) at the start
+written as files in `memory/`. **Read `memory/MEMORY.md` at the start
 of every session**; it indexes every rule currently in force, and several of them constrain what you
 are allowed to do. Never leave a convention only in a session transcript.
 
@@ -307,7 +307,7 @@ metadata:
 **How to apply:** <what to do differently> Related: [[other-slug]].
 ```
 
-After adding a file, add one line for it to [`memory/MEMORY.md`](memory/MEMORY.md), which is the
+After adding a file, add one line for it to `memory/MEMORY.md`, which is the
 index. Before writing a new memory, check whether an existing file already covers the ground and
 update that one instead of creating a near-duplicate; delete any memory that turns out to be wrong.
 
