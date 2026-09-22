@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "2.0.1.0",
+        "changelog": "The cross-link icon on the detail page now measures its place in the row again whenever the row moves under it, so it stays in line with the row's own links after navigation, a window resize, or a stylesheet that loads late. It lines up with the nearest link the row actually shows, and only when that link is on the same line. Its captions are renamed to \"Linked Movie\" and \"Linked Special\". On the config page, the Linked Pairs filter dropdowns keep their arrows, which had escaped to the page's top-right corner, and the Force Links and Ignore List formats are laid out as column legends with a real example, without the quotes the parser never accepted, and with a note on where a Jellyfin item ID comes from.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/AdamHarrison99/jellyfin-plugin-specialtomovie/releases/download/v2.0.1/specialtomovie-v2.0.1.zip",
+        "checksum": "2f5a426df769867ab0aec07a33be6708",
+        "timestamp": "2026-09-22T21:35:52Z"
+      },
+      {
         "version": "2.0.0.0",
         "changelog": "The major version now tracks the Jellyfin major version this plugin builds against: 2.x is the Jellyfin 12 line, and Jellyfin 10.11 servers should stay on 1.0.15.0. The cross-link button on the detail page is now drawn as an icon the same way the metadata logo packs draw theirs, so it sits in the row as one of them on any theme, taking its size, spacing and vertical alignment from the row's own links rather than from a fixed box, and adding no hover animation of its own. It also no longer appears on detail pages the web client holds off-screen, which could leave one side of a pair showing two icons and the other none. Supersedes the withdrawn 1.0.18.0 and 1.0.19.0.",
         "targetAbi": "12.0.0.0",
