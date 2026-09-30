@@ -6,6 +6,11 @@
 // resolves against the page and stacks in its top-right corner. This wraps each one the way
 // configPage.html now does, and moves the arrow into the wrapper with it.
 //
+// It also centres the arrow in the box, both in its own wrappers and in the .pairs-select-wrapper
+// the page ships. Jellyfin's .selectArrow drops 1.2em to clear a label these selects do not have,
+// so a wrapped arrow otherwise sits on the box's bottom border -- the v2.1.0 fault. On a v2.1.0 page
+// nothing needs wrapping and this style is the whole fix.
+//
 // ! The arrow is not reliably the select's next sibling -- emby-select's placement varies. Arrows
 // are paired to selects by their order inside the shared parent instead.
 //
@@ -20,6 +25,7 @@
     if (window.__stmArrowFix) { window.__stmArrowFix.undo(); }
 
     var WRAP_CLASS = 'stm-arrow-fix-wrapper';
+    var STYLE_ID = 'stm-arrow-fix-style';
     var ARROW = 'selectArrowContainer';
     var wrapped = [];
     var held = 0;
@@ -52,6 +58,16 @@
 
         group.selects.push(sel);
     });
+
+    var style = document.createElement('style');
+    style.id = STYLE_ID;
+    var wrappers = ['.' + WRAP_CLASS, '.pairs-select-wrapper'];
+    style.textContent = wrappers.map(function (w) {
+        return w + ' > .selectLabel { display: none; }' +
+            w + ' > .' + ARROW + ' { top: 0; bottom: 0; display: flex; align-items: center; }' +
+            w + ' .selectArrow { margin-top: 0; }';
+    }).join('');
+    document.head.appendChild(style);
 
     groups.forEach(function (group) {
         var arrows = [].slice.call(group.parent.children).filter(isArrow);
@@ -110,6 +126,7 @@
             });
 
             wrapped = [];
+            if (style.parentNode) { style.parentNode.removeChild(style); }
             delete window.__stmArrowFix;
             console.log('[STM arrow fix] undone. Reload for the page as the server sent it.');
         },

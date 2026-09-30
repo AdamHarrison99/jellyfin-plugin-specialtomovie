@@ -501,7 +501,7 @@ cross-links still work, but render as plain text and open a new tab.
 
 The page's inline script is held to the same comment rule as the rest of the source -- the lint
 reads the `<script>` bodies of an `.html` file -- so its rationale lives here. Two traps in its
-markup look like clutter and are not.
+markup look like clutter and are not, and a third rule sits in its stylesheet.
 
 **Every `<select is="emby-select">` must sit in a positioned parent.** Jellyfin's `emby-select`
 upgrade draws the chevron in a `.selectArrowContainer` of its own, `position: absolute`, and an
@@ -513,6 +513,16 @@ The three Linked Pairs filters each sit in a `.pairs-select-wrapper` for that re
 unwrap them; [`tools/configpage-selects.js`](tools/configpage-selects.js) fails if one is unwrapped,
 and [`tools/configpage-arrow-fix.js`](tools/configpage-arrow-fix.js) repairs a running server's page
 from the console.
+
+**A wrapped select's arrow must be re-centred.** Jellyfin lays the arrow out for a select with a
+label above it: `emby-select` inserts a `.selectLabel` before every select (empty when the select
+has no `label` attribute) and gives `.selectArrow` `margin-top: 1.2em` at `font-size: 1.7em` to clear
+it. The filter selects have no label, so in v2.1.0 their arrows hung off the bottom border of the
+box. `.pairs-select-wrapper` hides the empty label, stretches the arrow container to the wrapper's
+full height with its contents centred, and zeroes the arrow's top margin. `configpage-selects.js`
+applies Jellyfin's real `emby-select` rules (copied from jellyfin-web v12.0) and fails when the glyph
+leaves the select box or drifts off its centre. The centring check is not applied to a select in
+Jellyfin's own `.selectContainer`, whose label the check does not style.
 
 **A column legend's hidden spacer carries the same class as the control it stands in for.** Each
 list section (library mappings, force links, ignore list) heads its rows with a flex legend whose

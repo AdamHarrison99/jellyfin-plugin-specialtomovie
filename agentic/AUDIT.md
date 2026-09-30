@@ -39,6 +39,53 @@ technical, none personal. The only matches returned were the known-acceptable on
 ---
 ---
 
+## Fix: 2026-09-30 (Session 25 — Filter select arrows hang off the box, post-v2.1.0, unreleased)
+
+**Report:** in v2.1.0 the chevrons of the three Linked Pairs filter selects (Status, Library, Source)
+sit on the bottom border of each box instead of inside it.
+
+**Cause:** Jellyfin lays out an `emby-select` arrow for a select with a label above it.
+`attachedCallback` inserts a `.selectLabel` before every select (empty without a `label`
+attribute), and `.selectArrow` carries `margin-top: 1.2em` at `font-size: 1.7em` to clear it. The
+filters have no label, so the glyph dropped about 25px, ending 17px below the box. The v2.0.1 wrapper
+fixed the containing block but not this offset. Present since v2.0.1.
+
+**Why the check missed it (finding, fixed):** `configpage-selects.js` drew its arrow with an inline
+`top: 0` instead of Jellyfin's rules, and only tested the container's *top* edge against the wrapper.
+An arrow hanging off the bottom passed. It now builds what `emby-select` v12.0 builds (the empty
+label, the arrow appended to the parent), applies Jellyfin's `emby-select` rules copied from
+jellyfin-web v12.0 ahead of the page's own styles, and fails when the glyph leaves the select box or
+drifts more than a tenth of its height off centre. Before the page fix it failed all three filters
+(glyph 1807–1834 against a box of 1775–1817).
+
+**Fix:** three rules on `.pairs-select-wrapper` in `configPage.html` — hide the empty
+`.selectLabel`, stretch `.selectArrowContainer` to the wrapper's height with `align-items: center`,
+and zero `.selectArrow`'s top margin. CSS only; no markup or script change.
+
+**Console fix:** `configpage-arrow-fix.js` injects the same rules for its own wrapper and for
+`.pairs-select-wrapper`, and removes them on `undo()`. On a v2.1.0 page that style is the whole fix.
+
+### Verification
+
+- `configpage-selects.js` on the fixed page: 4/4, the three filters at drift +0.0px, under both
+  `STM_ARROW_MODE=end` and `after`.
+- Released v2.1.0 page alone: 1/4 (the fault reproduced). With the console fix: 4/4 in both modes.
+- Released v2.0.0 page with the console fix: 4/4 in both modes (was the corner fault; now centred too).
+- Build 0 warnings; audit-harness 28/28; `test.js` 46/46; `test-layout.js` 66/66; comment lint clean;
+  config page script and both tool scripts parse.
+- Scope: the centring check is not enforced on Jellyfin's own labelled `.selectContainer` (Primary
+  Provider), whose label styles the check does not model. It must still hold its glyph inside the box,
+  and does.
+
+### Review
+
+Security, efficiency, concurrency, filesystem: not applicable — three CSS rules, no input, no script
+change. **PII sweep:** the changed lines and the two tools' headers were read; nothing personal.
+**Scratchpad sweep:** copies of the v2.0.0 and v2.1.0 config pages taken from git to test the console
+fix, and the throwaway edit scripts, were deleted after use. Nothing to promote.
+
+---
+
 ## Audit: 2026-09-30 (Session 24 — Minimum special length, pre-release audit for v2.1.0)
 
 Scope: the new `MinimumSpecialLengthMinutes` setting and the per-episode detection claim added with
