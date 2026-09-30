@@ -39,7 +39,7 @@ technical, none personal. The only matches returned were the known-acceptable on
 ---
 ---
 
-## Audit: 2026-09-30 (Session 24 — Minimum special length, post-v2.0.1, unreleased)
+## Audit: 2026-09-30 (Session 24 — Minimum special length, pre-release audit for v2.1.0)
 
 Scope: the new `MinimumSpecialLengthMinutes` setting and the per-episode detection claim added with
 it. Design, decisions and a two-pass plan audit are in

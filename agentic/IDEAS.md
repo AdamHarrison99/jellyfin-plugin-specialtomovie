@@ -6,7 +6,7 @@
   - A button in the external-links row on an item's detail page (next to IMDb / TMDB / TVDB) that jumps to the linked counterpart: a Season 0 special gets a **Linked Movie** button, the paired movie gets a **Linked Special** button.
   - Shipped all three phases plus the `PairStore` lookup indexes. Full research, design, decisions, and the audit trail: [`plans/cross-link-buttons(DONE).md`](plans/cross-link-buttons%28DONE%29.md).
 
-- **Minimum special length** — DONE (unreleased)
+- **Minimum special length** — DONE (v2.1.0.0)
   - `MinimumSpecialLengthMinutes` (default 40): a special shorter than this is not turned into a new hard-linked movie. Existing pairs, force links and matches to a movie already in the library are unaffected; a special whose length Jellyfin has not read yet waits for `ItemUpdated`. Also closed a pre-existing race that could store two pairs for one episode. Design, decisions and audit: [`plans/minimum-special-length(DONE).md`](plans/minimum-special-length%28DONE%29.md).
 
 - **Per-library primary metadata provider** — Effort: Medium (half day)

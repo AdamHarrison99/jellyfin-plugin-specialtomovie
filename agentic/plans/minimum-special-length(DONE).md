@@ -2,10 +2,10 @@
 
 | | |
 | --- | --- |
-| **Status** | **DONE — implemented 2026-09-30**, audited and verified. Unreleased — no version bump yet. Decisions: [§8](#8-decisions). Plan audit: [§6](#6-plan-audit). Where the build diverged: [§9](#9-as-built-notes) |
+| **Status** | **DONE — implemented 2026-09-30**, audited and verified. Released in **2.1.0.0**. Decisions: [§8](#8-decisions). Plan audit: [§6](#6-plan-audit). Where the build diverged: [§9](#9-as-built-notes) |
 | **Source** | New request; not previously in [`IDEAS.md`](../IDEAS.md) |
 | **Effort** | ~half day including the `ItemUpdated` hook, docs and harness checks |
-| **Release shape** | Minor bump (new config option) — `2.1.0.0` per the version convention |
+| **Release shape** | Feature release (new config option) — shipped as `2.1.0.0` |
 
 ---
 
