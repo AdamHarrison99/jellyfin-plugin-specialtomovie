@@ -286,6 +286,16 @@
                                 Allow entries from a source TV library tagged as OVAs (Original Video Animations) to be linked to your destination movie library.
                             </div>
                         </div>
+
+                        <div class="inputContainer" style="margin-top:16px;">
+                            <label class="inputLabel inputLabelUnfocused" for="txtMinSpecialLength">Minimum special length (minutes)</label>
+                            <input id="txtMinSpecialLength" type="number" min="0" max="600" step="1" is="emby-input" />
+                            <div class="fieldDescription">
+                                Specials shorter than this are not linked to a new movie. Existing links, force links and
+                                movies already in your library are not affected. New specials are checked once Jellyfin
+                                has read their length. Set to 0 to link specials of any length.
+                            </div>
+                        </div>
                     </div>
 
                     <!-- Library Mappings -->
@@ -489,6 +499,7 @@
                         page.querySelector('#txtTmdbApiKey').value = config.TmdbApiKey || '';
                         page.querySelector('#txtTvdbApiKey').value = config.TvdbApiKey || '';
                         page.querySelector('#txtMetadataCacheDays').value = config.MetadataCacheDays != null ? config.MetadataCacheDays : 7;
+                        page.querySelector('#txtMinSpecialLength').value = config.MinimumSpecialLengthMinutes != null ? config.MinimumSpecialLengthMinutes : 40;
                         page.querySelector('#chkShowCrossLinks').checked = config.ShowCrossLinks !== false;
 
                         SpecialToMovieConfig.autoDeleteOnRemoval = config.AutoDeleteOnRemoval === true;
@@ -522,6 +533,8 @@
                         config.TvdbApiKey = page.querySelector('#txtTvdbApiKey').value.trim();
                         var cacheDaysVal = parseInt(page.querySelector('#txtMetadataCacheDays').value, 10);
                         config.MetadataCacheDays = isNaN(cacheDaysVal) ? 7 : cacheDaysVal;
+                        var minLengthVal = parseInt(page.querySelector('#txtMinSpecialLength').value, 10);
+                        config.MinimumSpecialLengthMinutes = isNaN(minLengthVal) ? 40 : Math.min(600, Math.max(0, minLengthVal));
                         config.ShowCrossLinks = page.querySelector('#chkShowCrossLinks').checked;
 
                         config.LibraryMappings = SpecialToMovieConfig.collectLibraryMappings();

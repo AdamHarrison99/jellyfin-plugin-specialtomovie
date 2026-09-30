@@ -29,6 +29,9 @@ public class PluginConfiguration : BasePluginConfiguration
 
     public bool RequireDualConfirmation { get; set; } = false;
 
+    // Applies to new hard links only; zero or less disables it.
+    public int MinimumSpecialLengthMinutes { get; set; } = 40;
+
     public List<LibraryMapping> LibraryMappings { get; set; } = new();
 
     public List<ForceLinkEntry> ForceLinks { get; set; } = new();

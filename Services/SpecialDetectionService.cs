@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Jellyfin.Data.Enums;
 using Jellyfin.Plugin.SpecialToMovie.Configuration;
 using Jellyfin.Plugin.SpecialToMovie.Data;
@@ -14,6 +15,19 @@ namespace Jellyfin.Plugin.SpecialToMovie.Services;
 
 public class SpecialDetectionService
 {
+    public enum LengthCheck
+    {
+        Allowed,
+        TooShort,
+        Unknown
+    }
+
+    // Episodes with a detection run in progress. See agentic/ARCHITECTURE.md, "Detection and pairing".
+    private readonly ConcurrentDictionary<Guid, byte> _inFlight = new();
+
+    // Episodes whose length was unknown when detection reached the minimum-length check.
+    private readonly ConcurrentDictionary<Guid, byte> _awaitingLength = new();
+
     private readonly ILibraryManager _libraryManager;
     private readonly IPairStore _pairStore;
     private readonly AggregatedLookupService _lookupService;
@@ -48,16 +62,77 @@ public class SpecialDetectionService
             }),
             virtualFolders);
 
-        await ProcessEpisodeAsync(episode, null, movieIndex, virtualFolders, cancellationToken).ConfigureAwait(false);
+        await ProcessEpisodeAsync(episode, null, movieIndex, virtualFolders, applyMinimumLength: true, claimHeld: false, cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task ProcessEpisodeAsync(Episode episode, ConfigSnapshot? snapshot, MovieIndex? movieIndex, IReadOnlyList<VirtualFolderInfo>? virtualFolders, CancellationToken cancellationToken)
+    public bool TryTakeAwaiting(Guid episodeId) => _awaitingLength.TryRemove(episodeId, out _);
+
+    public void ForgetAwaiting(Guid episodeId) => _awaitingLength.TryRemove(episodeId, out _);
+
+    public static LengthCheck CheckMinimumLength(long? runTimeTicks, int minimumMinutes)
+    {
+        if (minimumMinutes <= 0)
+        {
+            return LengthCheck.Allowed;
+        }
+
+        if (runTimeTicks is not > 0)
+        {
+            return LengthCheck.Unknown;
+        }
+
+        return runTimeTicks.Value < (long)minimumMinutes * TimeSpan.TicksPerMinute
+            ? LengthCheck.TooShort
+            : LengthCheck.Allowed;
+    }
+
+    // ! A caller passing claimHeld must already own the _inFlight entry for this episode.
+    private async Task<LengthCheck?> ProcessEpisodeAsync(
+        Episode episode,
+        ConfigSnapshot? snapshot,
+        MovieIndex? movieIndex,
+        IReadOnlyList<VirtualFolderInfo>? virtualFolders,
+        bool applyMinimumLength,
+        bool claimHeld,
+        CancellationToken cancellationToken)
+    {
+        if (!claimHeld && !_inFlight.TryAdd(episode.Id, 0))
+        {
+            _logger.LogDebug("Detection already running for episode {Id}, skipping", episode.Id);
+            return null;
+        }
+
+        try
+        {
+            _awaitingLength.TryRemove(episode.Id, out _);
+            return await DetectEpisodeAsync(episode, snapshot, movieIndex, virtualFolders, applyMinimumLength, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            if (!claimHeld)
+            {
+                _inFlight.TryRemove(episode.Id, out _);
+            }
+        }
+    }
+
+    private async Task<LengthCheck?> DetectEpisodeAsync(
+        Episode episode,
+        ConfigSnapshot? snapshot,
+        MovieIndex? movieIndex,
+        IReadOnlyList<VirtualFolderInfo>? virtualFolders,
+        bool applyMinimumLength,
+        CancellationToken cancellationToken)
     {
         var config = Plugin.Instance?.Configuration;
         if (config == null)
         {
-            return;
+            return null;
         }
+
+        // A caller with no snapshot is a real-time event, not a batch scan.
+        var isRealTime = snapshot == null;
 
         // Use a snapshot of mutable collections to avoid race conditions with config saves
         snapshot ??= ConfigSnapshot.From(config);
@@ -65,13 +140,13 @@ public class SpecialDetectionService
 
         if (_pairStore.ExistsForEpisode(episode.Id))
         {
-            return;
+            return null;
         }
 
         var mapping = ResolveMapping(episode, snapshot, virtualFolders);
         if (mapping == null)
         {
-            return;
+            return null;
         }
 
         var episodeKey = FormatEpisodeKey(episode);
@@ -79,7 +154,7 @@ public class SpecialDetectionService
         if (IsIgnored(snapshot.IgnoreList, episode, episodeKey))
         {
             _logger.LogDebug("Episode {Key} is in ignore list, skipping", episodeKey);
-            return;
+            return null;
         }
 
         // Check force links first
@@ -117,11 +192,11 @@ public class SpecialDetectionService
                     _logger.LogInformation(
                         "Force link: paired {Key} directly to movie item {MovieName} ({MovieId})",
                         episodeKey, movieItem.Name, movieItemId);
-                    return;
+                    return null;
                 }
 
                 _logger.LogWarning("Force link: movie item {Id} not found in library", movieItemId);
-                return;
+                return null;
             }
 
             match = ParseForcedMovie(forceLink.MovieTitle);
@@ -158,7 +233,7 @@ public class SpecialDetectionService
 
                 _pairStore.Upsert(existingPair);
                 _watchSyncService.SyncInitialWatchState(existingPair);
-                return;
+                return null;
             }
         }
 
@@ -167,14 +242,14 @@ public class SpecialDetectionService
         if (match == null)
         {
             _logger.LogDebug("No movie match found for {Key}", episodeKey);
-            return;
+            return null;
         }
 
         if (config.RequireDualConfirmation &&
             (string.IsNullOrEmpty(match.TmdbMovieId) || string.IsNullOrEmpty(match.TvdbMovieId)))
         {
             _logger.LogInformation("Dual confirmation required but only one source matched for {Key}, skipping", episodeKey);
-            return;
+            return null;
         }
 
         // Check if the movie already exists in the destination library
@@ -205,7 +280,30 @@ public class SpecialDetectionService
 
             _pairStore.Upsert(existingPair);
             _watchSyncService.SyncInitialWatchState(existingPair);
-            return;
+            return null;
+        }
+
+        // Gates new hard links only. See agentic/ARCHITECTURE.md, "Detection and pairing".
+        if (applyMinimumLength && forceLink == null)
+        {
+            var minimum = snapshot.MinimumSpecialLengthMinutes;
+            var lengthCheck = CheckMinimumLength(ReadRunTimeTicks(episode), minimum);
+
+            if (lengthCheck == LengthCheck.Unknown)
+            {
+                _awaitingLength.TryAdd(episode.Id, 0);
+                _logger.LogDebug("Length of {Key} not known yet, waiting for it before linking", episodeKey);
+                return lengthCheck;
+            }
+
+            if (lengthCheck == LengthCheck.TooShort)
+            {
+                _logger.Log(
+                    isRealTime ? LogLevel.Information : LogLevel.Debug,
+                    "Special {Key} is shorter than the {Minimum} minute minimum, not linking it to '{MovieTitle}'",
+                    episodeKey, minimum, match.Title);
+                return lengthCheck;
+            }
         }
 
         // Dry run: log and store as DryRun, no filesystem changes
@@ -232,7 +330,7 @@ public class SpecialDetectionService
             };
 
             _pairStore.Upsert(dryRunPair);
-            return;
+            return null;
         }
 
         // Create hard link
@@ -240,7 +338,7 @@ public class SpecialDetectionService
         if (string.IsNullOrEmpty(destinationPath))
         {
             _logger.LogError("Could not resolve destination path for mapping");
-            return;
+            return null;
         }
 
         if (!_hardLinkService.ValidateSameFilesystem(episode.Path, destinationPath))
@@ -250,7 +348,7 @@ public class SpecialDetectionService
                 episode.Path, destinationPath);
 
             StorePairWithError(episode, mapping, match, "Source and destination are on different filesystems");
-            return;
+            return null;
         }
 
         var extension = Path.GetExtension(episode.Path);
@@ -259,7 +357,7 @@ public class SpecialDetectionService
         if (!_hardLinkService.Create(episode.Path, linkPath))
         {
             StorePairWithError(episode, mapping, match, "Failed to create hard link");
-            return;
+            return null;
         }
 
         var movieFolderPath = Path.GetDirectoryName(linkPath);
@@ -300,6 +398,7 @@ public class SpecialDetectionService
         _logger.LogInformation(
             "Created hard link for '{EpisodeName}' -> '{MovieTitle} ({Year})': {LinkPath}",
             episode.Name, match.Title, match.Year, linkPath);
+        return null;
     }
 
     public async Task RunFullScanAsync(IProgress<double>? progress = null, CancellationToken cancellationToken = default)
@@ -334,19 +433,39 @@ public class SpecialDetectionService
         var total = episodes.Count;
         _logger.LogInformation("Full scan: found {Count} Season 0 episodes", total);
 
+        var tooShort = 0;
+        var lengthUnknown = 0;
+
         for (int i = 0; i < total; i++)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
             if (episodes[i] is Episode episode)
             {
-                await ProcessEpisodeAsync(episode, snapshot, movieIndex, virtualFolders, cancellationToken).ConfigureAwait(false);
+                var lengthCheck = await ProcessEpisodeAsync(episode, snapshot, movieIndex, virtualFolders, applyMinimumLength: true, claimHeld: false, cancellationToken)
+                    .ConfigureAwait(false);
+
+                if (lengthCheck == LengthCheck.TooShort)
+                {
+                    tooShort++;
+                }
+                else if (lengthCheck == LengthCheck.Unknown)
+                {
+                    lengthUnknown++;
+                }
 
                 // Small delay between lookups to respect rate limits
                 await Task.Delay(100, cancellationToken).ConfigureAwait(false);
             }
 
             progress?.Report((double)(i + 1) / total * 90);
+        }
+
+        if (tooShort > 0 || lengthUnknown > 0)
+        {
+            _logger.LogInformation(
+                "Full scan: skipped {TooShort} specials shorter than the {Minimum} minute minimum; {Unknown} still waiting for a length",
+                tooShort, snapshot.MinimumSpecialLengthMinutes, lengthUnknown);
         }
 
         EnforceIgnoreList(snapshot, config.AutoDeleteOnRemoval);
@@ -383,17 +502,32 @@ public class SpecialDetectionService
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var episode = _libraryManager.GetItemById(pair.EpisodeItemId) as Episode;
-            if (episode == null)
+            // ! Claimed before the pair is removed. See agentic/ARCHITECTURE.md, "Detection and pairing".
+            if (!_inFlight.TryAdd(pair.EpisodeItemId, 0))
             {
-                _logger.LogWarning("Episode {Id} no longer exists, removing DryRun pair", pair.EpisodeItemId);
-                _pairStore.Remove(pair.Id);
+                _logger.LogDebug("Detection running for episode {Id}, promoting it next scan", pair.EpisodeItemId);
                 continue;
             }
 
-            // Remove the DryRun pair so ProcessEpisodeAsync can recreate it as Pending
-            _pairStore.Remove(pair.Id);
-            await ProcessEpisodeAsync(episode, snapshot, movieIndex, virtualFolders, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                var episode = _libraryManager.GetItemById(pair.EpisodeItemId) as Episode;
+                if (episode == null)
+                {
+                    _logger.LogWarning("Episode {Id} no longer exists, removing DryRun pair", pair.EpisodeItemId);
+                    _pairStore.Remove(pair.Id);
+                    continue;
+                }
+
+                // Remove the DryRun pair so ProcessEpisodeAsync can recreate it as Pending
+                _pairStore.Remove(pair.Id);
+                await ProcessEpisodeAsync(episode, snapshot, movieIndex, virtualFolders, applyMinimumLength: false, claimHeld: true, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            finally
+            {
+                _inFlight.TryRemove(pair.EpisodeItemId, out _);
+            }
         }
     }
 
@@ -410,6 +544,17 @@ public class SpecialDetectionService
         {
             _watchSyncService.SyncInitialWatchState(pair);
         }
+    }
+
+    // The instance passed in can predate the probe, so an unknown length is re-read from the library.
+    private long? ReadRunTimeTicks(Episode episode)
+    {
+        if (episode.RunTimeTicks > 0)
+        {
+            return episode.RunTimeTicks;
+        }
+
+        return _libraryManager.GetItemById(episode.Id)?.RunTimeTicks;
     }
 
     private LibraryMapping? ResolveMapping(Episode episode, ConfigSnapshot snapshot, IReadOnlyList<VirtualFolderInfo> folders)
@@ -776,7 +921,8 @@ public class SpecialDetectionService
                 continue;
             }
 
-            await ProcessEpisodeAsync(episode, snapshot, movieIndex, virtualFolders, cancellationToken).ConfigureAwait(false);
+            await ProcessEpisodeAsync(episode, snapshot, movieIndex, virtualFolders, applyMinimumLength: true, claimHeld: false, cancellationToken)
+                .ConfigureAwait(false);
             processed++;
         }
 
@@ -830,6 +976,7 @@ public class SpecialDetectionService
         public required List<LibraryMapping> LibraryMappings { get; init; }
         public required List<ForceLinkEntry> ForceLinks { get; init; }
         public required List<string> IgnoreList { get; init; }
+        public required int MinimumSpecialLengthMinutes { get; init; }
 
         public static ConfigSnapshot From(PluginConfiguration config)
         {
@@ -837,7 +984,8 @@ public class SpecialDetectionService
             {
                 LibraryMappings = new List<LibraryMapping>(config.LibraryMappings),
                 ForceLinks = new List<ForceLinkEntry>(config.ForceLinks),
-                IgnoreList = new List<string>(config.IgnoreList)
+                IgnoreList = new List<string>(config.IgnoreList),
+                MinimumSpecialLengthMinutes = config.MinimumSpecialLengthMinutes
             };
         }
     }

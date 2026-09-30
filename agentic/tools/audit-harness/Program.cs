@@ -1,15 +1,17 @@
 using Jellyfin.Plugin.SpecialToMovie.Data;
 using Jellyfin.Plugin.SpecialToMovie.HardLink;
 using Jellyfin.Plugin.SpecialToMovie.Models;
+using Jellyfin.Plugin.SpecialToMovie.Services;
 using MediaBrowser.Common.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 
 // Behavioural checks for the parts of the plugin that can run without a Jellyfin server: the
 // hard-link path construction and its containment guard, filename sanitisation, the pair store's
-// persistence and recovery behaviour, and the URL escaping applied to provider IDs.
+// persistence and recovery behaviour, the URL escaping applied to provider IDs, and the
+// minimum special length gate.
 //
 // These are the invariants an audit asserts and then cannot otherwise demonstrate. Run after any
-// change to HardLinkService, PairStore, or the lookup services' URL construction.
+// change to HardLinkService, PairStore, the lookup services' URL construction, or the length gate.
 
 var failures = new List<string>();
 var passed = 0;
@@ -241,6 +243,36 @@ try
 
     Check("a fragment in a provider id cannot truncate the URL", () =>
         !Uri.EscapeDataString("123#").Contains('#', StringComparison.Ordinal));
+
+    Console.WriteLine();
+    Console.WriteLine("CheckMinimumLength — minimum special length gate");
+
+    const long Minute = TimeSpan.TicksPerMinute;
+
+    Check("a minimum of zero allows any length, including an unknown one", () =>
+        SpecialDetectionService.CheckMinimumLength(null, 0) == SpecialDetectionService.LengthCheck.Allowed
+        && SpecialDetectionService.CheckMinimumLength(5 * Minute, 0) == SpecialDetectionService.LengthCheck.Allowed);
+
+    Check("a negative minimum is treated as disabled", () =>
+        SpecialDetectionService.CheckMinimumLength(1, -10) == SpecialDetectionService.LengthCheck.Allowed);
+
+    Check("a null or zero length is unknown when a minimum is set", () =>
+        SpecialDetectionService.CheckMinimumLength(null, 40) == SpecialDetectionService.LengthCheck.Unknown
+        && SpecialDetectionService.CheckMinimumLength(0, 40) == SpecialDetectionService.LengthCheck.Unknown
+        && SpecialDetectionService.CheckMinimumLength(-1, 40) == SpecialDetectionService.LengthCheck.Unknown);
+
+    Check("one tick under the minimum is too short", () =>
+        SpecialDetectionService.CheckMinimumLength((40 * Minute) - 1, 40) == SpecialDetectionService.LengthCheck.TooShort);
+
+    Check("exactly the minimum is allowed", () =>
+        SpecialDetectionService.CheckMinimumLength(40 * Minute, 40) == SpecialDetectionService.LengthCheck.Allowed);
+
+    Check("a feature-length special is allowed", () =>
+        SpecialDetectionService.CheckMinimumLength(122 * Minute, 40) == SpecialDetectionService.LengthCheck.Allowed);
+
+    Check("the largest possible minimum does not overflow", () =>
+        SpecialDetectionService.CheckMinimumLength(long.MaxValue - 1, int.MaxValue) == SpecialDetectionService.LengthCheck.Allowed
+        && SpecialDetectionService.CheckMinimumLength(600 * Minute, int.MaxValue) == SpecialDetectionService.LengthCheck.TooShort);
 }
 finally
 {

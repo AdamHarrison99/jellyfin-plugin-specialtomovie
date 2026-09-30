@@ -304,6 +304,62 @@ episode key always carries the `S00E` suffix and IDs are GUIDs.
 digits is an IMDB ID, `tmdb:` and `tvdb:` name their providers, and anything else is read as
 `Movie Title (Year)`.
 
+### The minimum special length
+
+`MinimumSpecialLengthMinutes` stops a short special — a featurette, trailer or recap that a provider
+has associated with a film — from becoming a new movie. Full design and audit:
+[`plans/minimum-special-length(DONE).md`](plans/minimum-special-length%28DONE%29.md).
+
+**It gates new hard links only.** The check sits after the existing-movie match and before the
+dry-run branch. A special matched to a movie already in the destination library is paired whatever
+its length, and a force link bypasses the check entirely. A `DryRun` pair means "would create a hard
+link", so it obeys the same rule.
+
+**It never touches an existing pair.** The one path that re-creates an existing pair is
+`PromoteDryRunPairsAsync`, which removes a `DryRun` pair and re-runs detection to make the real
+link. It passes `applyMinimumLength: false`; otherwise turning dry run off would silently drop every
+existing short dry-run pair. `CleanupTask.ValidatePair` repairs and promotes pairs without calling
+detection, so it needs no exemption. A consequence: "Remove All Hard Links" resets pairs to `DryRun`,
+and turning dry run off afterwards recreates short links too — they are existing pairs.
+
+**An unknown length waits; it does not pass.** Jellyfin raises `ItemAdded` before the metadata
+refresh that probes the file (`Folder.ValidateChildrenInternal2` calls `CreateItems` ahead of
+`RefreshMetadataRecursive`), so every new special starts out with no `RunTimeTicks`. Letting unknown
+through would link exactly the featurettes the setting exists to block. The episode goes into
+`_awaitingLength` instead, and `LibraryEventHandler.OnItemUpdated` re-runs detection when the first
+refresh's save raises `ItemUpdated` with a length. The set is in memory only; after a restart the
+nightly full scan covers it. A file Jellyfin never measures — a `.strm`, or one whose probe fails —
+waits indefinitely while a minimum is set, and a force link is the way to link it.
+
+**The length is re-read before deciding "unknown".** A full scan fetches its episode list once at
+scan start and an `ItemAdded` instance predates the probe, so the instance passed in can be stale.
+`ReadRunTimeTicks` falls back to `GetItemById` when the instance has none.
+
+**A special found too short is not watched.** Re-checking it on every metadata edit would cost work
+on every real featurette. A file that probed short because it was still arriving is caught by the
+next full scan, which re-evaluates every unpaired special.
+
+**`OnItemUpdated` runs inline inside Jellyfin's save loop**, once per item per save, for every kind of
+update — images, user edits, refreshes. It does a type check and a set lookup, hands any real work to
+a background task, and catches everything.
+
+### One detection per episode at a time
+
+`_inFlight` holds the IDs of episodes with a detection run in progress. `ProcessEpisodeAsync` claims
+the episode on entry and releases it in a `finally`; a caller that loses the claim returns without
+doing anything. Without it, a real-time run and a full scan could both pass `ExistsForEpisode` for the
+same unpaired episode and store two pairs — a check-then-act race that predates the minimum length,
+which made it more likely by adding `ItemUpdated` as a second real-time trigger.
+
+**`PromoteDryRunPairsAsync` claims before it removes the `DryRun` pair** and passes `claimHeld: true`
+through the re-run. Claiming inside the re-run would leave a gap after the removal in which a
+real-time run finds no pair, applies the minimum, and drops the existing pair. If promotion cannot
+claim the episode it leaves the pair for the next scan.
+
+One narrow window is accepted: if `ItemUpdated` arrives while another run for the same episode is in
+flight and has not yet re-added it to `_awaitingLength`, that wake-up is lost and the next full scan
+picks the episode up.
+
 ---
 
 ## Hard links and subtitles — `HardLink/HardLinkService.cs`
@@ -428,6 +484,12 @@ in `LibraryEventHandler`.
 
 **Dry run is enabled by default** so a new user reviews matches before anything touches the
 filesystem.
+
+**`MinimumSpecialLengthMinutes` defaults to 40**, the feature-length line used by the Academy, the
+AFI and the BFI. That is conservative in the direction that matters: it does not block real films,
+including short anime features and 45–60 minute TV films, while it catches featurettes, trailers,
+recaps and most bonus episodes. An upgraded install picks up 40 too, which changes new detection
+only. Zero or less disables it; the config page caps entry at 600.
 
 **`EnableCrossLinkButtons` is read on every call**, so toggling it takes effect without a server
 restart. **`EnableClientScript` controls only the injection** of the client script: with it off the

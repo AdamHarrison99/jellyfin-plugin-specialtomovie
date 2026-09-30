@@ -22,10 +22,10 @@ User-facing feature list, install steps, config walkthrough, deletion behavior t
 ## Architecture at a glance
 
 ```
-LibraryEventHandler (ItemAdded/ItemRemoved, IHostedService)  ─┐
-FullScanTask (IScheduledTask, daily @ midnight)               ├─→ SpecialDetectionService ─→ AggregatedLookupService (TMDB + TVDB, parallel)
-CleanupTask (IScheduledTask, every CleanupIntervalHours)      ─┘                            ─→ HardLinkService (link + NFO + subtitles)
-                                                                                             ─→ PairStore (JSON, atomic writes + backup)
+LibraryEventHandler (ItemAdded/Updated/Removed, IHostedService) ─┐
+FullScanTask (IScheduledTask, daily @ midnight)                  ├─→ SpecialDetectionService ─→ AggregatedLookupService (TMDB + TVDB, parallel)
+CleanupTask (IScheduledTask, every CleanupIntervalHours)         ─┘                            ─→ HardLinkService (link + NFO + subtitles)
+                                                                                                ─→ PairStore (JSON, atomic writes + backup)
 WatchSyncService (IHostedService, subscribes IUserDataManager.UserDataSaved)
     → mirrors Played / PlayCount / PlaybackPositionTicks / LastPlayedDate / IsFavorite between paired items, per-user
 
@@ -79,7 +79,7 @@ services.AddHostedService<LibraryEventHandler>();
 | `Services/LinkedItemDeleter.cs` | The single definition of "delete this item and its files through Jellyfin". Replaced four near-identical private copies in the controller, the detection service, the event handler and the cleanup task. Logs through the caller's own logger and never throws. |
 | `HardLink/IHardLinkService.cs` | Interface + `SubtitleSyncResult`/`SubtitleDeletion` types. |
 | `HardLink/HardLinkService.cs` | Cross-platform P/Invoke hard links, path sanitization, NFO writing, subtitle linking/sync/deletion-verification. |
-| `EventHandlers/LibraryEventHandler.cs` | `ItemAdded`/`ItemRemoved` subscriptions — real-time detection + pair activation/cleanup. |
+| `EventHandlers/LibraryEventHandler.cs` | `ItemAdded`/`ItemUpdated`/`ItemRemoved` subscriptions — real-time detection + pair activation/cleanup. `ItemUpdated` only re-runs detection for a special that was waiting for Jellyfin to read its length (see the minimum special length below). |
 | `Tasks/FullScanTask.cs` | Wraps `SpecialDetectionService.RunFullScanAsync`. Daily @ midnight by default. |
 | `Tasks/CleanupTask.cs` | Validates all pairs, repairs inconsistencies, syncs subtitles. Every `CleanupIntervalHours` (default 6). |
 | `Api/SpecialToMovieController.cs` | REST endpoints — full table below. Admin-only. |
@@ -154,6 +154,7 @@ Persistence: single JSON file (`pairs.json`), `lock (_lock)` around all reads/wr
 | `AutoDetectEnabled` | `true` | Gates `LibraryEventHandler.OnItemAdded` real-time detection. |
 | `AllowOvaLinking` | `false` | TVDB-only: lets episodes tagged `OVA`/`OVAs` (not just `Movies`) be treated as movie matches. |
 | `RequireDualConfirmation` | `false` | If true, a match is discarded unless **both** `TmdbMovieId` and `TvdbMovieId` are populated. |
+| `MinimumSpecialLengthMinutes` | `40` | A special shorter than this is not turned into a **new** hard-linked movie. Existing pairs, force links and matches to a movie already in the library are unaffected. `<= 0` disables. Unknown length waits for `ItemUpdated`. See the detection pipeline below and `ARCHITECTURE.md`. |
 | `LibraryMappings` | `[]` | `List<LibraryMapping>` — see below. Multiple mappings supported (not a single global path). |
 | `ForceLinks` | `[]` | `List<ForceLinkEntry> { EpisodeKey, MovieTitle }` — see Force Link resolution below. |
 | `IgnoreList` | `[]` | `List<string>` of `"SeriesName S00E##"` keys or Jellyfin item GUIDs. |
@@ -190,8 +191,9 @@ For cases 2–5, the plugin then checks whether a movie with those provider IDs 
 ## Detection pipeline (`SpecialDetectionService.ProcessEpisodeAsync`)
 
 ```
-Season 0 episode seen (real-time ItemAdded, or FullScanTask/CleanupTask batch)
+Season 0 episode seen (real-time ItemAdded/ItemUpdated, or FullScanTask/CleanupTask batch)
   │
+  ├─ Detection already running for this episode (_inFlight claim)? → skip
   ├─ Already paired (PairStore.ExistsForEpisode)? → skip
   ├─ Resolve LibraryMapping by matching the episode's file path against each virtual
   │  folder's Locations, then finding an Enabled mapping for that library. No match → skip.
@@ -204,6 +206,9 @@ Season 0 episode seen (real-time ItemAdded, or FullScanTask/CleanupTask batch)
   ├─ Movie already exists in destination library (matched by TMDB/TVDB/IMDB provider ID)?
   │    └─ yes → pair directly, Status=Active, IsExistingMovie=true, no hard link created,
   │             SyncInitialWatchState runs immediately
+  ├─ MinimumSpecialLengthMinutes (skipped for force links and DryRun promotion):
+  │    ├─ length unknown → add to _awaitingLength, stop; ItemUpdated re-runs it once known
+  │    └─ too short → stop, no pair
   ├─ DryRunMode?
   │    └─ yes → store pair with Status=DryRun, log "DRY RUN: would create...", zero FS writes
   └─ Create hard link:
@@ -214,7 +219,7 @@ Season 0 episode seen (real-time ItemAdded, or FullScanTask/CleanupTask batch)
        └─ store pair, Status=Pending (MovieItemId still null until the library scans it in)
 ```
 
-`RunFullScanAsync` (the batch entry point used by `FullScanTask`) additionally: snapshots mutable config lists once at scan start (`ConfigSnapshot` — avoids races with concurrent config saves mid-scan), batch-fetches all Season 0 episodes / all movies / virtual folders up front (avoids N+1 `ILibraryManager` queries), inserts a 100ms delay between episodes to respect provider rate limits, then after the main loop: `EnforceIgnoreList`, `ProcessForceLinksAsync`, and — only if dry run is now **off** — `PromoteDryRunPairsAsync` (removes each `DryRun` pair and re-runs `ProcessEpisodeAsync` so it's recreated as `Pending`/`Active`) and `SyncAllActivePairs` (re-syncs watch state for every `Active` pair, catching drift that happened while the plugin was stopped or dry-run was on).
+`RunFullScanAsync` (the batch entry point used by `FullScanTask`) additionally: snapshots mutable config lists once at scan start (`ConfigSnapshot` — avoids races with concurrent config saves mid-scan), batch-fetches all Season 0 episodes / all movies / virtual folders up front (avoids N+1 `ILibraryManager` queries), inserts a 100ms delay between episodes to respect provider rate limits, logs one summary line counting specials skipped by the minimum length or still waiting for one, then after the main loop: `EnforceIgnoreList`, `ProcessForceLinksAsync`, and — only if dry run is now **off** — `PromoteDryRunPairsAsync` (claims the episode, removes each `DryRun` pair and re-runs `ProcessEpisodeAsync` with the minimum length bypassed so it's recreated as `Pending`/`Active`) and `SyncAllActivePairs` (re-syncs watch state for every `Active` pair, catching drift that happened while the plugin was stopped or dry-run was on).
 
 ## Metadata lookup providers
 

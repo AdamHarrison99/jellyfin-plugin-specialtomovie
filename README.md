@@ -16,6 +16,7 @@ Manual hard links solve the file deduplication problem, but **watch status still
 - **Bidirectional watch sync** — mark the movie as watched and the episode updates too, and vice versa
 - **Subtitle sync** — hard links external subtitle files between paired items, syncs additions and removals bidirectionally
 - **Existing movie detection** — if a linked movie already exists in your library, pairs it directly without creating a hard link
+- **Minimum special length** — short specials such as featurettes and trailers are not turned into movies
 - **Library mapping** — route specials from specific TV libraries to specific movie libraries
 - **Force links & ignore list** — manually override or exclude episodes or entire series using names, Jellyfin item IDs, or provider IDs
 - **Automatic maintenance** — validates pairs periodically, enforces ignore list and force links, fixes orphaned entries

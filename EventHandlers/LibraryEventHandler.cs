@@ -36,6 +36,7 @@ public class LibraryEventHandler : IHostedService, IDisposable
     {
         _cts = new CancellationTokenSource();
         _libraryManager.ItemAdded += OnItemAdded;
+        _libraryManager.ItemUpdated += OnItemUpdated;
         _libraryManager.ItemRemoved += OnItemRemoved;
         _logger.LogInformation("LibraryEventHandler started");
         return Task.CompletedTask;
@@ -45,6 +46,7 @@ public class LibraryEventHandler : IHostedService, IDisposable
     {
         _cts?.Cancel();
         _libraryManager.ItemAdded -= OnItemAdded;
+        _libraryManager.ItemUpdated -= OnItemUpdated;
         _libraryManager.ItemRemoved -= OnItemRemoved;
         _logger.LogInformation("LibraryEventHandler stopped");
         return Task.CompletedTask;
@@ -55,6 +57,7 @@ public class LibraryEventHandler : IHostedService, IDisposable
         _cts?.Cancel();
         _cts?.Dispose();
         _libraryManager.ItemAdded -= OnItemAdded;
+        _libraryManager.ItemUpdated -= OnItemUpdated;
         _libraryManager.ItemRemoved -= OnItemRemoved;
     }
 
@@ -69,22 +72,7 @@ public class LibraryEventHandler : IHostedService, IDisposable
         // New Season 0 episode — run detection
         if (e.Item is Episode episode && episode.ParentIndexNumber == 0)
         {
-            var token = _cts?.Token ?? CancellationToken.None;
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    await _detectionService.ProcessEpisodeAsync(episode, token).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException)
-                {
-                    // Expected during shutdown
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Error processing new episode {Name}", episode.Name);
-                }
-            }, token);
+            RunDetectionInBackground(episode);
         }
 
         // New movie at a tracked hard link path — promote pair to Active
@@ -110,6 +98,54 @@ public class LibraryEventHandler : IHostedService, IDisposable
         }
     }
 
+    // ! Raised inline inside Jellyfin's save loop, for every kind of update: keep the checks cheap.
+    private void OnItemUpdated(object? sender, ItemChangeEventArgs e)
+    {
+        try
+        {
+            if (e.Item is not Episode episode || episode.ParentIndexNumber != 0 || episode.RunTimeTicks is not > 0)
+            {
+                return;
+            }
+
+            var config = Plugin.Instance?.Configuration;
+            if (config == null || !config.AutoDetectEnabled)
+            {
+                return;
+            }
+
+            if (_detectionService.TryTakeAwaiting(episode.Id))
+            {
+                _logger.LogDebug("Length of {Name} is now known, running detection", episode.Name);
+                RunDetectionInBackground(episode);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error handling updated item {Name}", e.Item?.Name);
+        }
+    }
+
+    private void RunDetectionInBackground(Episode episode)
+    {
+        var token = _cts?.Token ?? CancellationToken.None;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await _detectionService.ProcessEpisodeAsync(episode, token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                // Expected during shutdown
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error processing episode {Name}", episode.Name);
+            }
+        }, token);
+    }
+
     private void OnItemRemoved(object? sender, ItemChangeEventArgs e)
     {
         var config = Plugin.Instance?.Configuration;
@@ -123,6 +159,8 @@ public class LibraryEventHandler : IHostedService, IDisposable
         // Episode removed
         if (item is Episode)
         {
+            _detectionService.ForgetAwaiting(item.Id);
+
             var pair = _pairStore.GetByEpisodeId(item.Id);
             if (pair == null)
             {

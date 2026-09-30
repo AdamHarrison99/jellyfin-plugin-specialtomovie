@@ -39,6 +39,116 @@ technical, none personal. The only matches returned were the known-acceptable on
 ---
 ---
 
+## Audit: 2026-09-30 (Session 24 — Minimum special length, post-v2.0.1, unreleased)
+
+Scope: the new `MinimumSpecialLengthMinutes` setting and the per-episode detection claim added with
+it. Design, decisions and a two-pass plan audit are in
+[`plans/minimum-special-length(DONE).md`](plans/minimum-special-length%28DONE%29.md); the plan audit's findings
+(A1–A8) were resolved in the design before any code was written and are not repeated here. This entry
+covers the audit of the implementation.
+
+Files changed: `Configuration/PluginConfiguration.cs`, `Configuration/configPage.html`,
+`Services/SpecialDetectionService.cs`, `EventHandlers/LibraryEventHandler.cs`, `README.md`,
+`agentic/tools/audit-harness/Program.cs`, and the agent docs.
+
+### Step 1 — Build
+
+`dotnet build -c Release`: 0 errors, 0 warnings. One compile error on the first build (the success
+path of the detection method had no return value after its return type changed) was fixed before
+anything else ran.
+
+### Step 2 — Harnesses
+
+- `audit-harness`: **28/28**. Seven new checks cover `CheckMinimumLength`: zero and negative
+  minimums disable it, null/zero/negative ticks are unknown, one tick under the minimum is too short,
+  exactly the minimum passes, a feature-length special passes, and `int.MaxValue` minutes does not
+  overflow.
+- `webclient-harness` (`npm test`): both halves pass, layout 66/66. Not affected by this change.
+- `configpage-selects.js`: 4 of 4 selects hold their arrow. The new field is a number input, not a
+  select; run because the page changed.
+- Config page inline script extracted and parsed: parses. The new field's ID is referenced exactly
+  four times (label, input, load, save).
+
+### Step 3 — Comment lint
+
+`node agentic/tools/check-comments.mjs .`: **clean (73 files)**. New comments point to the new
+`ARCHITECTURE.md` subsections under "Detection and pairing", which carry the rationale.
+
+### Step 4 — Security review
+
+**Clean.** The only new input is one integer, deserialised by Jellyfin's configuration loader into an
+`int` and clamped to 0–600 by the page. It reaches no URL, path, HTML or log format string; the page
+writes it through `.value`. No new endpoint and no change to authorization.
+
+### Step 5 — Efficiency review
+
+**Clean.** The gate is O(1) and sits after the lookup, so short specials cost the same lookups they
+did before (cached). `ReadRunTimeTicks` adds one `GetItemById` only for a matched special headed for a
+new hard link whose instance has no length. `OnItemUpdated` runs on every library save on the server;
+it does a type check, then a config read and one dictionary removal for Season 0 episodes with a
+length, and nothing else unless the episode was waiting. The per-episode claim is two dictionary
+operations per detection run.
+
+### Step 6 — Concurrency review
+
+- **Finding (fixed during implementation review, low):** at each call site the new
+  `applyMinimumLength` and `claimHeld` flags were passed as unlabelled `true, false`, so a
+  transposition would compile and silently skip the claim or the gate. Every call site now uses named
+  arguments.
+- **Finding (fixed during implementation review, low):** the detection method returned
+  `LengthCheck.Allowed` from about a dozen exits that never reached the length check, so a future
+  caller reading the result could take "already paired" or "no match" for "passed". It now returns
+  `LengthCheck?`, `null` meaning the check was not reached.
+- **Pre-existing race closed:** a real-time run and a full scan could both pass `ExistsForEpisode`
+  for the same episode and store two pairs. `_inFlight` now serialises detection per episode. It
+  lives on the singleton `SpecialDetectionService`; `FullScanTask`, `CleanupTask` and
+  `LibraryEventHandler` all receive that one instance from the root container. Released in a
+  `finally` on every path, including `continue` and cancellation.
+- `PromoteDryRunPairsAsync` claims before removing the `DryRun` pair and holds the claim through the
+  re-run, closing the gap that could otherwise let a real-time run drop an existing short pair.
+- `_awaitingLength` is cleared when a run takes the claim and re-added only on an unknown length, so
+  it cannot retain a paired, ignored or too-short episode. `OnItemRemoved` also clears it.
+- `OnItemUpdated` runs inline inside Jellyfin's save loop: work goes to a background task on the
+  existing `_cts` token, and the synchronous part is wrapped in `try`/`catch`.
+- **Accepted:** the narrow lost wake-up described in the plan (A8). A missed `ItemUpdated` falls back
+  to the next full scan.
+
+### Step 7 — Filesystem and API review
+
+**Clean.** No filesystem operation, deletion or endpoint added. The setting never removes a pair, a
+file or a media item, so the ItemRemoved-cascade ordering rule is not in play. The one path that
+re-creates an existing pair, `PromoteDryRunPairsAsync`, bypasses the gate, as the "new links only"
+rule requires. `CleanupTask.ValidatePair` does not call detection and is unaffected.
+
+### Step 8 — Sweeps
+
+- **PII sweep:** all tracked files plus the new plan file. Checks 1–4 returned only known-acceptable
+  matches: the Jellyfin Windows install path in `README.md`, the `"a/b\\c"` traversal input in the
+  harness, the project's GitHub owner handle in `README.md`/`manifest.json`/`build.yaml`/`CLAUDE.md`,
+  and four-part version numbers. Every new comment line and every changed prose line was read: all
+  technical, none personal. **Clean.**
+- **Scratchpad sweep:** the session scratchpad is empty, and no `stm-harness-*` temporary directory
+  was left behind. A copy of an old `HANDOFF.md`, taken to measure the diagram's alignment, was
+  deleted as soon as it had been read. Jellyfin source was read online and never saved locally.
+  Nothing to promote into `tools/`. **Clean.**
+
+### Step 9 — Documentation
+
+- `HANDOFF.md`: architecture sketch, `LibraryEventHandler` row, config table, detection pipeline
+  (claim and gate steps), `RunFullScanAsync` and promotion notes.
+- `ARCHITECTURE.md`: "The minimum special length" and "One detection per episode at a time" under
+  Detection and pairing; the 40-minute default under Configuration.
+- `IDEAS.md`: entry marked DONE (unreleased). `tools/README.md`: the harness row lists the new checks.
+- `README.md`: one feature-list bullet.
+
+### Not verified here
+
+The server-side behaviour in the plan's manual checklist (§7.5) needs a live Jellyfin server: the
+`ItemUpdated` wake-up on a real add, dry-run promotion of short pairs, and a full scan racing a new
+special. The Jellyfin event ordering it relies on was verified against the `v12.0` source.
+
+---
+
 ## Audit: 2026-09-22 (Session 23 — Pre-release audit for v2.0.1)
 
 **Scope**: the tree at `9da264a` — everything since v2.0.0, which is the Session 21 re-measure fix,
