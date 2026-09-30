@@ -1,6 +1,6 @@
 name: "SpecialToMovie"
 guid: "a1b2c3d4-5678-9abc-def0-123456789abc"
-version: "2.0.1.0"
+version: "2.1.0.0"
 targetAbi: "12.0.0.0"
 framework: "net10.0"
 overview: "Detects TV specials that are also movies, creates hard links, and syncs watch status."
@@ -14,14 +14,11 @@ owner: "AdamHarrison99"
 artifacts:
   - "Jellyfin.Plugin.SpecialToMovie.dll"
 changelog: |
-  - Cross-link icon measures its place in the row again whenever the row moves
-    under it, so it stays in line after navigation, a window resize, or a
-    stylesheet that loads late
-  - Cross-link icon lines up with the nearest link the row actually shows, and
-    only when that link is on the same line
-  - Cross-link captions renamed to "Linked Movie" and "Linked Special"
-  - Config page: the Linked Pairs filter dropdowns keep their arrows, which had
-    escaped to the page's top-right corner
-  - Config page: Force Links and Ignore List formats are laid out as column
-    legends with a real example, drop the quotes the parser never accepted, and
-    say where a Jellyfin item ID comes from
+  - New setting: Minimum special length (default 40 minutes). A special shorter
+    than this is not turned into a new movie, which stops featurettes, trailers
+    and recaps from being linked. Existing links, force links and specials
+    matched to a movie already in the library are not affected. Set to 0 to
+    link specials of any length
+  - A newly added special is checked once Jellyfin has read its length
+  - Fixed a rare case where a special added during a full scan could be paired
+    twice

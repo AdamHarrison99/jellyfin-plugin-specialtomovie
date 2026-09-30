@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "2.1.0.0",
+        "changelog": "New setting: Minimum special length (default 40 minutes, under Metadata Provider Settings). A special shorter than this is not turned into a new movie, which stops featurettes, trailers and recaps from being linked. Existing links, force links, and specials matched to a movie already in your library are not affected, and 0 links specials of any length. A newly added special is checked once Jellyfin has read its length. Also fixes a rare case where a special added during a full scan could be paired twice.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/AdamHarrison99/jellyfin-plugin-specialtomovie/releases/download/v2.1.0/specialtomovie-v2.1.0.zip",
+        "checksum": "8c5200cf47c5155cf240d0ccc175fc0b",
+        "timestamp": "2026-09-30T19:23:52Z"
+      },
+      {
         "version": "2.0.1.0",
         "changelog": "The cross-link icon on the detail page now measures its place in the row again whenever the row moves under it, so it stays in line with the row's own links after navigation, a window resize, or a stylesheet that loads late. It lines up with the nearest link the row actually shows, and only when that link is on the same line. Its captions are renamed to \"Linked Movie\" and \"Linked Special\". On the config page, the Linked Pairs filter dropdowns keep their arrows, which had escaped to the page's top-right corner, and the Force Links and Ignore List formats are laid out as column legends with a real example, without the quotes the parser never accepted, and with a note on where a Jellyfin item ID comes from.",
         "targetAbi": "12.0.0.0",
